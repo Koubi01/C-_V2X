@@ -1,0 +1,34 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "dotnet",
+			"task": "build",
+			"group": "build",
+			"label": "build",
+			"detail": "Build the entire solution",
+			"args": [
+				"build",
+				"${workspaceFolder}/src/V2XDashboard.slnx"
+			],
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"type": "msbuild",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "rebuild",
+			"label": "Rebuild: V2XDashboard.Server.csproj",
+			"detail": "Rebuild the V2XDashboard.Server.csproj project using dotnet msbuild /t:Rebuild"
+		},
+		{
+			"type": "dotnet",
+			"task": "build C:\\Users\\koubi\\Desktop\\C#_V2X\\src\\V2XDashboard.Server\\V2XDashboard.Server.csproj",
+			"file": "C:\\Users\\koubi\\Desktop\\C#_V2X\\src\\V2XDashboard.Server\\V2XDashboard.Server.csproj",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "dotnet: build C:\\Users\\koubi\\Desktop\\C#_V2X\\src\\V2XDashboard.Server\\V2XDashboard.Server.csproj"
+		}
+	]
+}

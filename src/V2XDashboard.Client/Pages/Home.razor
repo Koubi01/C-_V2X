@@ -1,0 +1,319 @@
+﻿@page "/"
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="dashboard-page">
+	<MudStack Spacing="3">
+		<MudPaper Class="dashboard-hero" Elevation="0">
+			<MudGrid Spacing="3">
+				<MudItem xs="12" md="7">
+					<MudText Typo="Typo.overline" Class="hero-kicker">V2X PCAP Dashboard</MudText>
+					<MudText Typo="Typo.h3">Operate the capture pipeline from one place.</MudText>
+					<MudText Typo="Typo.body1" Class="hero-copy">
+						Process PCAP files, inspect recently decoded traffic, and track OBU to RSU correlations without leaving the browser.
+					</MudText>
+				</MudItem>
+				<MudItem xs="12" md="5">
+					<MudPaper Class="hero-actions" Elevation="0">
+						<MudStack Spacing="2">
+							<MudSelect T="string" Label="PCAP file" Variant="Variant.Outlined" @bind-Value="selectedFile" Disabled="@isBusy">
+								@foreach (var file in pcapFiles)
+								{
+									<MudSelectItem T="string" Value="@file">@file</MudSelectItem>
+								}
+							</MudSelect>
+							<MudStack Row="true" Spacing="2">
+								<MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ProcessSelectedFileAsync" Disabled="@(isBusy || string.IsNullOrWhiteSpace(selectedFile))">
+									Process Selected
+								</MudButton>
+								<MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ProcessAllFilesAsync" Disabled="@isBusy">
+									Process All
+								</MudButton>
+								<MudButton Variant="Variant.Text" Color="Color.Default" OnClick="LoadDashboardAsync" Disabled="@isBusy">
+									Refresh
+								</MudButton>
+							</MudStack>
+						</MudStack>
+					</MudPaper>
+				</MudItem>
+			</MudGrid>
+		</MudPaper>
+
+		@if (!string.IsNullOrWhiteSpace(errorMessage))
+		{
+			<MudAlert Severity="Severity.Error" Variant="Variant.Filled">@errorMessage</MudAlert>
+		}
+
+		@if (isLoading)
+		{
+			<MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+		}
+
+		<MudGrid Spacing="3">
+			<MudItem xs="12" sm="6" lg="3">
+				<MudPaper Class="metric-card" Elevation="0">
+					<MudText Typo="Typo.overline">Available Files</MudText>
+					<MudText Typo="Typo.h3">@pcapFiles.Count</MudText>
+					<MudText Typo="Typo.body2">Capture files ready for ingestion.</MudText>
+				</MudPaper>
+			</MudItem>
+			<MudItem xs="12" sm="6" lg="3">
+				<MudPaper Class="metric-card" Elevation="0">
+					<MudText Typo="Typo.overline">Recent Packets</MudText>
+					<MudText Typo="Typo.h3">@recentPackets.Count</MudText>
+					<MudText Typo="Typo.body2">Latest packet sample from the API.</MudText>
+				</MudPaper>
+			</MudItem>
+			<MudItem xs="12" sm="6" lg="3">
+				<MudPaper Class="metric-card" Elevation="0">
+					<MudText Typo="Typo.overline">Map Entities</MudText>
+					<MudText Typo="Typo.h3">@entityCount</MudText>
+					<MudText Typo="Typo.body2">Objects currently returned for map rendering.</MudText>
+				</MudPaper>
+			</MudItem>
+			<MudItem xs="12" sm="6" lg="3">
+				<MudPaper Class="metric-card" Elevation="0">
+					<MudText Typo="Typo.overline">Correlations</MudText>
+					<MudText Typo="Typo.h3">@correlationCount</MudText>
+					<MudText Typo="Typo.body2">Recent OBU to RSU matches available to review.</MudText>
+				</MudPaper>
+			</MudItem>
+		</MudGrid>
+
+		<MudGrid Spacing="3">
+			<MudItem xs="12" md="5">
+				<MudPaper Class="panel-card" Elevation="0">
+					<MudStack Row="true" Justify="Justify.SpaceBetween">
+						<MudText Typo="Typo.h6">Available PCAP Files</MudText>
+						<MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined">@pcapFiles.Count files</MudChip>
+					</MudStack>
+					<MudStack Spacing="1" Class="mt-3">
+						@if (pcapFiles.Count == 0)
+						{
+							<MudPaper Class="file-pill" Elevation="0">
+								<MudText Typo="Typo.body2">No PCAP files found.</MudText>
+							</MudPaper>
+						}
+						else
+						{
+							@foreach (var file in pcapFiles.Take(8))
+							{
+								<MudPaper Class="file-pill" Elevation="0">
+									<MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
+									<MudText Typo="Typo.body2">@file</MudText>
+								</MudPaper>
+							}
+						}
+					</MudStack>
+				</MudPaper>
+			</MudItem>
+			<MudItem xs="12" md="7">
+				<MudPaper Class="panel-card" Elevation="0">
+					<MudStack Row="true" Justify="Justify.SpaceBetween">
+						<MudText Typo="Typo.h6">Message Families</MudText>
+						<MudText Typo="Typo.caption">Recent sample from each decoder endpoint</MudText>
+					</MudStack>
+					<MudTable Items="messageSummaryRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="mt-3">
+						<HeaderContent>
+							<MudTh>Type</MudTh>
+							<MudTh>Messages</MudTh>
+							<MudTh>Latest</MudTh>
+							<MudTh>Description</MudTh>
+						</HeaderContent>
+						<RowTemplate>
+							<MudTd DataLabel="Type">
+								<MudChip T="string" Color="@context.Color" Variant="Variant.Filled">@context.Name</MudChip>
+							</MudTd>
+							<MudTd DataLabel="Messages">@context.Count</MudTd>
+							<MudTd DataLabel="Latest">@context.LatestLabel</MudTd>
+							<MudTd DataLabel="Description">@context.Description</MudTd>
+						</RowTemplate>
+					</MudTable>
+				</MudPaper>
+			</MudItem>
+		</MudGrid>
+
+		<MudPaper Class="panel-card" Elevation="0">
+			<MudStack Row="true" Justify="Justify.SpaceBetween">
+				<MudText Typo="Typo.h6">Recent Packets</MudText>
+				<MudButton Variant="Variant.Text" Color="Color.Primary" Href="packets">Open Packet Explorer</MudButton>
+			</MudStack>
+			<MudTable Items="recentPackets" Dense="true" Hover="true" Breakpoint="Breakpoint.Md" Class="mt-3">
+				<HeaderContent>
+					<MudTh>Timestamp</MudTh>
+					<MudTh>Type</MudTh>
+					<MudTh>Protocol</MudTh>
+					<MudTh>Source</MudTh>
+					<MudTh>Destination</MudTh>
+					<MudTh>File</MudTh>
+				</HeaderContent>
+				<RowTemplate>
+					<MudTd DataLabel="Timestamp">@context.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+					<MudTd DataLabel="Type">@context.PacketType</MudTd>
+					<MudTd DataLabel="Protocol">@context.Protocol</MudTd>
+					<MudTd DataLabel="Source">@FormatEndpoint(context.SourceIp, context.SourcePort, context.SourceMac)</MudTd>
+					<MudTd DataLabel="Destination">@FormatEndpoint(context.DestinationIp, context.DestinationPort, context.DestinationMac)</MudTd>
+					<MudTd DataLabel="File">@context.PcapFileName</MudTd>
+				</RowTemplate>
+			</MudTable>
+		</MudPaper>
+	</MudStack>
+</MudContainer>
+
+@code {
+	private readonly List<MessageSummaryRow> messageSummaryRows = new();
+	private readonly List<Packet> recentPackets = new();
+	private readonly List<string> pcapFiles = new();
+	private bool isLoading;
+	private bool isBusy;
+	private int entityCount;
+	private int correlationCount;
+	private string? selectedFile;
+	private string? errorMessage;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LoadDashboardAsync();
+	}
+
+	private async Task LoadDashboardAsync()
+	{
+		isLoading = true;
+		errorMessage = null;
+
+		try
+		{
+			var filesTask = Http.GetFromJsonAsync<List<string>>("api/pcap/files");
+			var packetsTask = Http.GetFromJsonAsync<List<Packet>>("api/pcap/packets");
+			var entitiesTask = Http.GetFromJsonAsync<List<MapEntityDto>>("api/pcap/map-entities");
+			var correlationsTask = Http.GetFromJsonAsync<List<CorrelationDto>>("api/pcap/correlations");
+			var camTask = Http.GetFromJsonAsync<List<CAM>>("api/pcap/cam");
+			var denmTask = Http.GetFromJsonAsync<List<DENM>>("api/pcap/denm");
+			var mapemTask = Http.GetFromJsonAsync<List<MAPEM>>("api/pcap/mapem");
+			var spatemTask = Http.GetFromJsonAsync<List<SPATEM>>("api/pcap/spatem");
+			var sremTask = Http.GetFromJsonAsync<List<SREM>>("api/pcap/srem");
+			var ssemTask = Http.GetFromJsonAsync<List<SSEM>>("api/pcap/ssem");
+
+			await Task.WhenAll(filesTask, packetsTask, entitiesTask, correlationsTask, camTask, denmTask, mapemTask, spatemTask, sremTask, ssemTask);
+
+			pcapFiles.Clear();
+			pcapFiles.AddRange((await filesTask) ?? new List<string>());
+			selectedFile ??= pcapFiles.FirstOrDefault();
+
+			recentPackets.Clear();
+			recentPackets.AddRange(((await packetsTask) ?? new List<Packet>()).OrderByDescending(packet => packet.Timestamp));
+
+			entityCount = ((await entitiesTask) ?? new List<MapEntityDto>()).Count;
+			correlationCount = ((await correlationsTask) ?? new List<CorrelationDto>()).Count;
+
+			messageSummaryRows.Clear();
+			messageSummaryRows.Add(CreateMessageSummary("CAM", Color.Success, (await camTask) ?? new List<CAM>(), "Cooperative awareness from OBUs."));
+			messageSummaryRows.Add(CreateMessageSummary("DENM", Color.Error, (await denmTask) ?? new List<DENM>(), "Safety and hazard notifications."));
+			messageSummaryRows.Add(CreateMessageSummary("MAPEM", Color.Info, (await mapemTask) ?? new List<MAPEM>(), "RSU map and lane topology."));
+			messageSummaryRows.Add(CreateMessageSummary("SPATEM", Color.Warning, (await spatemTask) ?? new List<SPATEM>(), "Signal phase and timing state."));
+			messageSummaryRows.Add(CreateMessageSummary("SREM", Color.Secondary, (await sremTask) ?? new List<SREM>(), "Priority requests from vehicles."));
+			messageSummaryRows.Add(CreateMessageSummary("SSEM", Color.Dark, (await ssemTask) ?? new List<SSEM>(), "Signal status and acknowledgements."));
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Dashboard data could not be loaded: {ex.Message}";
+		}
+		finally
+		{
+			isLoading = false;
+		}
+	}
+
+	private async Task ProcessSelectedFileAsync()
+	{
+		if (string.IsNullOrWhiteSpace(selectedFile) || isBusy)
+		{
+			return;
+		}
+
+		isBusy = true;
+		errorMessage = null;
+
+		try
+		{
+			var response = await Http.PostAsync($"api/pcap/process/{Uri.EscapeDataString(selectedFile)}", null);
+			if (!response.IsSuccessStatusCode)
+			{
+				errorMessage = await response.Content.ReadAsStringAsync();
+				return;
+			}
+
+			Snackbar.Add($"Processed {selectedFile}", Severity.Success);
+			await LoadDashboardAsync();
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"PCAP processing failed: {ex.Message}";
+		}
+		finally
+		{
+			isBusy = false;
+		}
+	}
+
+	private async Task ProcessAllFilesAsync()
+	{
+		if (isBusy)
+		{
+			return;
+		}
+
+		isBusy = true;
+		errorMessage = null;
+
+		try
+		{
+			var response = await Http.GetAsync("api/pcap/process/allFiles");
+			if (!response.IsSuccessStatusCode)
+			{
+				errorMessage = await response.Content.ReadAsStringAsync();
+				return;
+			}
+
+			Snackbar.Add("All PCAP files processed.", Severity.Success);
+			await LoadDashboardAsync();
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Bulk processing failed: {ex.Message}";
+		}
+		finally
+		{
+			isBusy = false;
+		}
+	}
+
+	private static string FormatEndpoint(string ipAddress, int port, string macAddress)
+	{
+		if (!string.IsNullOrWhiteSpace(ipAddress) && port > 0)
+		{
+			return $"{ipAddress}:{port}";
+		}
+
+		if (!string.IsNullOrWhiteSpace(ipAddress))
+		{
+			return ipAddress;
+		}
+
+		return string.IsNullOrWhiteSpace(macAddress) ? "n/a" : macAddress;
+	}
+
+	private static MessageSummaryRow CreateMessageSummary<TMessage>(string name, Color color, IReadOnlyCollection<TMessage> messages, string description)
+		where TMessage : V2XMessage
+	{
+		var latest = messages.Count == 0
+			? "No data"
+			: messages.Max(message => message.GenerationTime).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
+		return new MessageSummaryRow(name, messages.Count, latest, description, color);
+	}
+
+	private sealed record MessageSummaryRow(string Name, int Count, string LatestLabel, string Description, Color Color);
+}

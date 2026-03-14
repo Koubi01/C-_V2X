@@ -1,0 +1,177 @@
+﻿@page "/messages"
+@inject HttpClient Http
+
+<PageTitle>Messages</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="data-page">
+    <MudStack Spacing="3">
+        <MudPaper Class="panel-card" Elevation="0">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.h4">Message Explorer</MudText>
+                    <MudText Typo="Typo.body1">Switch between decoded ETSI message families and inspect normalized message details.</MudText>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" Label="Message Type" Variant="Variant.Outlined" @bind-Value="selectedMessageType">
+                        @foreach (var messageType in messageTypes)
+                        {
+                            <MudSelectItem T="string" Value="@messageType">@messageType</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudNumericField T="int" Label="Page Size" Variant="Variant.Outlined" Min="5" Max="200" @bind-Value="pageSize" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="ApplyFiltersAsync" Disabled="@isLoading">Load</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">@errorMessage</MudAlert>
+        }
+
+        @if (isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+
+        <MudPaper Class="panel-card" Elevation="0">
+            <MudTable Items="messageRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Md">
+                <HeaderContent>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Generated</MudTh>
+                    <MudTh>Station</MudTh>
+                    <MudTh>Location</MudTh>
+                    <MudTh>Details</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Type">
+                        <MudChip T="string" Color="@context.Color" Variant="Variant.Filled">@context.MessageType</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Generated">@context.GenerationTime</MudTd>
+                    <MudTd DataLabel="Station">@context.StationLabel</MudTd>
+                    <MudTd DataLabel="Location">@context.LocationLabel</MudTd>
+                    <MudTd DataLabel="Details">@context.Detail</MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Class="pa-4">No messages returned for the selected type.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+
+            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
+                <MudText Typo="Typo.body2">Page @pageNumber of @TotalPages (@totalCount messages)</MudText>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="PreviousPageAsync" Disabled="@(isLoading || pageNumber <= 1)">Previous</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="NextPageAsync" Disabled="@(isLoading || pageNumber >= TotalPages)">Next</MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    </MudStack>
+</MudContainer>
+
+@code {
+    private readonly List<MessageRow> messageRows = new();
+    private readonly string[] messageTypes = ["CAM", "DENM", "MAPEM", "SPATEM", "SREM", "SSEM"];
+    private string selectedMessageType = "CAM";
+    private int pageNumber = 1;
+    private int pageSize = 25;
+    private int totalCount;
+    private bool isLoading;
+    private string? errorMessage;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(totalCount / (double)Math.Max(1, pageSize)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMessagesAsync(pageNumber);
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        await LoadMessagesAsync(1);
+    }
+
+    private async Task PreviousPageAsync()
+    {
+        if (pageNumber > 1)
+        {
+            await LoadMessagesAsync(pageNumber - 1);
+        }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (pageNumber < TotalPages)
+        {
+            await LoadMessagesAsync(pageNumber + 1);
+        }
+    }
+
+    private async Task LoadMessagesAsync(int targetPage)
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            messageRows.Clear();
+
+            var url = $"api/pcap/messages/paged?messageType={Uri.EscapeDataString(selectedMessageType)}&pageNumber={targetPage}&pageSize={pageSize}";
+            var result = await Http.GetFromJsonAsync<PagedResult<MessageListItemDto>>(url) ?? new PagedResult<MessageListItemDto>();
+
+            messageRows.AddRange(result.Items.Select(ToRow));
+            totalCount = result.TotalCount;
+            pageNumber = result.PageNumber <= 0 ? targetPage : result.PageNumber;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Message query failed: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static MessageRow ToRow(MessageListItemDto message) => new(
+        message.MessageType,
+        message.GenerationTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+        message.StationLabel,
+        FormatLocation(message.Latitude, message.Longitude),
+        message.Detail,
+        ResolveColor(message.MessageType));
+
+    private static string FormatLocation(double? latitude, double? longitude)
+    {
+        if (!latitude.HasValue || !longitude.HasValue)
+        {
+            return "n/a";
+        }
+
+        return $"{latitude:0.000000}, {longitude:0.000000}";
+    }
+
+    private static Color ResolveColor(string messageType)
+    {
+        return messageType.ToUpperInvariant() switch
+        {
+            "CAM" => Color.Success,
+            "DENM" => Color.Error,
+            "MAPEM" => Color.Info,
+            "SPATEM" => Color.Warning,
+            "SREM" => Color.Secondary,
+            "SSEM" => Color.Dark,
+            _ => Color.Primary
+        };
+    }
+
+    private sealed record MessageRow(
+        string MessageType,
+        string GenerationTime,
+        string StationLabel,
+        string LocationLabel,
+        string Detail,
+        Color Color);
+}
