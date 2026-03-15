@@ -31,6 +31,6 @@ Thumbs.db
 .env
 .env.*
 
-.mbtiles
+*.mbtiles
 
 .pcap
