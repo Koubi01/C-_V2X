@@ -17,3 +17,15 @@ public class MessageListItemDto
     public double? Longitude { get; set; }
     public string Detail { get; set; } = string.Empty;
 }
+
+public class MessageCountsDto
+{
+    public int TotalPackets { get; set; }
+    public int CAM { get; set; }
+    public int DENM { get; set; }
+    public int MAPEM { get; set; }
+    public int SPATEM { get; set; }
+    public int SREM { get; set; }
+    public int SSEM { get; set; }
+    public int TotalCorrelations { get; set; }
+}

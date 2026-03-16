@@ -12,6 +12,7 @@ public interface IPcapService
     Task<PagedResult<Packet>> GetPacketsPagedAsync(string? filter = null, int pageNumber = 1, int pageSize = 25);
     Task<List<V2XMessage>> GetV2XMessagesAsync(string? messageType = null, int? limit = null);
     Task<PagedResult<MessageListItemDto>> GetMessageListPagedAsync(string messageType, int pageNumber = 1, int pageSize = 25);
+    Task<MessageCountsDto> GetMessageCountsAsync();
     Task<List<CAM>> GetCAMMessagesAsync(int? limit = null);
     Task<List<DENM>> GetDENMMessagesAsync(int? limit = null);
     Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null);

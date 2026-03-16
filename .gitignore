@@ -34,3 +34,5 @@ Thumbs.db
 *.mbtiles
 
 *.pcap
+
+.fake

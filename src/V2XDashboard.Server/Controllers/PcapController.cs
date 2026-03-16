@@ -137,6 +137,20 @@ public class PcapController : ControllerBase
         }
     }
 
+    [HttpGet("messages/counts")]
+    public async Task<IActionResult> GetMessageCounts()
+    {
+        try
+        {
+            var counts = await _pcapService.GetMessageCountsAsync();
+            return Ok(counts);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error retrieving message counts: {ex.Message}");
+        }
+    }
+
     [HttpGet("messages/paged")]
     public async Task<IActionResult> GetMessageListPaged(
         [FromQuery] string messageType = "CAM",

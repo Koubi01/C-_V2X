@@ -275,6 +275,36 @@ public class PcapService : IPcapService
         };
     }
 
+    public async Task<MessageCountsDto> GetMessageCountsAsync()
+    {
+        const string sql = """
+            SELECT
+                (SELECT COUNT(*) FROM packets)              AS total_packets,
+                (SELECT COUNT(*) FROM cam_messages)         AS cam,
+                (SELECT COUNT(*) FROM denm_messages)        AS denm,
+                (SELECT COUNT(*) FROM mapem_messages)       AS mapem,
+                (SELECT COUNT(*) FROM spatem_messages)      AS spatem,
+                (SELECT COUNT(*) FROM srem_messages)        AS srem,
+                (SELECT COUNT(*) FROM ssem_messages)        AS ssem,
+                (SELECT COUNT(*) FROM obu_rsu_correlations) AS total_correlations
+            """;
+
+        using var connection = new NpgsqlConnection(_connectionString);
+        var row = await connection.QuerySingleAsync(sql);
+
+        return new MessageCountsDto
+        {
+            TotalPackets      = (int)row.total_packets,
+            CAM               = (int)row.cam,
+            DENM              = (int)row.denm,
+            MAPEM             = (int)row.mapem,
+            SPATEM            = (int)row.spatem,
+            SREM              = (int)row.srem,
+            SSEM              = (int)row.ssem,
+            TotalCorrelations = (int)row.total_correlations
+        };
+    }
+
     public async Task<List<V2XMessage>> GetV2XMessagesAsync(string? messageType = null, int? limit = null)
     {
         var allMessages = new List<V2XMessage>();

@@ -61,9 +61,9 @@
 			</MudItem>
 			<MudItem xs="12" sm="6" lg="3">
 				<MudPaper Class="metric-card" Elevation="0">
-					<MudText Typo="Typo.overline">Recent Packets</MudText>
-					<MudText Typo="Typo.h3">@recentPackets.Count</MudText>
-					<MudText Typo="Typo.body2">Latest packet sample from the API.</MudText>
+					<MudText Typo="Typo.overline">Total Packets</MudText>
+					<MudText Typo="Typo.h3">@totalPacketCount</MudText>
+					<MudText Typo="Typo.body2">Packets stored in the database.</MudText>
 				</MudPaper>
 			</MudItem>
 			<MudItem xs="12" sm="6" lg="3">
@@ -113,21 +113,19 @@
 				<MudPaper Class="panel-card" Elevation="0">
 					<MudStack Row="true" Justify="Justify.SpaceBetween">
 						<MudText Typo="Typo.h6">Message Families</MudText>
-						<MudText Typo="Typo.caption">Recent sample from each decoder endpoint</MudText>
+						<MudText Typo="Typo.caption">Total stored per decoder</MudText>
 					</MudStack>
 					<MudTable Items="messageSummaryRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="mt-3">
 						<HeaderContent>
 							<MudTh>Type</MudTh>
-							<MudTh>Messages</MudTh>
-							<MudTh>Latest</MudTh>
+							<MudTh>Count</MudTh>
 							<MudTh>Description</MudTh>
 						</HeaderContent>
 						<RowTemplate>
 							<MudTd DataLabel="Type">
 								<MudChip T="string" Color="@context.Color" Variant="Variant.Filled">@context.Name</MudChip>
 							</MudTd>
-							<MudTd DataLabel="Messages">@context.Count</MudTd>
-							<MudTd DataLabel="Latest">@context.LatestLabel</MudTd>
+							<MudTd DataLabel="Count">@context.Count</MudTd>
 							<MudTd DataLabel="Description">@context.Description</MudTd>
 						</RowTemplate>
 					</MudTable>
@@ -136,40 +134,25 @@
 		</MudGrid>
 
 		<MudPaper Class="panel-card" Elevation="0">
-			<MudStack Row="true" Justify="Justify.SpaceBetween">
-				<MudText Typo="Typo.h6">Recent Packets</MudText>
-				<MudButton Variant="Variant.Text" Color="Color.Primary" Href="packets">Open Packet Explorer</MudButton>
+			<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+				<MudText Typo="Typo.h6">Packet Explorer</MudText>
+				<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="packets">Open Packet Explorer</MudButton>
 			</MudStack>
-			<MudTable Items="recentPackets" Dense="true" Hover="true" Breakpoint="Breakpoint.Md" Class="mt-3">
-				<HeaderContent>
-					<MudTh>Timestamp</MudTh>
-					<MudTh>Type</MudTh>
-					<MudTh>Protocol</MudTh>
-					<MudTh>Source</MudTh>
-					<MudTh>Destination</MudTh>
-					<MudTh>File</MudTh>
-				</HeaderContent>
-				<RowTemplate>
-					<MudTd DataLabel="Timestamp">@context.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
-					<MudTd DataLabel="Type">@context.PacketType</MudTd>
-					<MudTd DataLabel="Protocol">@context.Protocol</MudTd>
-					<MudTd DataLabel="Source">@FormatEndpoint(context.SourceIp, context.SourcePort, context.SourceMac)</MudTd>
-					<MudTd DataLabel="Destination">@FormatEndpoint(context.DestinationIp, context.DestinationPort, context.DestinationMac)</MudTd>
-					<MudTd DataLabel="File">@context.PcapFileName</MudTd>
-				</RowTemplate>
-			</MudTable>
+			<MudText Typo="Typo.body2" Class="mt-2">
+				@totalPacketCount packets stored. Use the Packet Explorer to filter, search, and page through individual captures.
+			</MudText>
 		</MudPaper>
 	</MudStack>
 </MudContainer>
 
 @code {
 	private readonly List<MessageSummaryRow> messageSummaryRows = new();
-	private readonly List<Packet> recentPackets = new();
 	private readonly List<string> pcapFiles = new();
 	private bool isLoading;
 	private bool isBusy;
 	private int entityCount;
 	private int correlationCount;
+	private int totalPacketCount;
 	private string? selectedFile;
 	private string? errorMessage;
 
@@ -185,36 +168,28 @@
 
 		try
 		{
-			var filesTask = Http.GetFromJsonAsync<List<string>>("api/pcap/files");
-			var packetsTask = Http.GetFromJsonAsync<List<Packet>>("api/pcap/packets");
+			var filesTask   = Http.GetFromJsonAsync<List<string>>("api/pcap/files");
+			var countsTask  = Http.GetFromJsonAsync<MessageCountsDto>("api/pcap/messages/counts");
 			var entitiesTask = Http.GetFromJsonAsync<List<MapEntityDto>>("api/pcap/map-entities");
-			var correlationsTask = Http.GetFromJsonAsync<List<CorrelationDto>>("api/pcap/correlations");
-			var camTask = Http.GetFromJsonAsync<List<CAM>>("api/pcap/cam");
-			var denmTask = Http.GetFromJsonAsync<List<DENM>>("api/pcap/denm");
-			var mapemTask = Http.GetFromJsonAsync<List<MAPEM>>("api/pcap/mapem");
-			var spatemTask = Http.GetFromJsonAsync<List<SPATEM>>("api/pcap/spatem");
-			var sremTask = Http.GetFromJsonAsync<List<SREM>>("api/pcap/srem");
-			var ssemTask = Http.GetFromJsonAsync<List<SSEM>>("api/pcap/ssem");
 
-			await Task.WhenAll(filesTask, packetsTask, entitiesTask, correlationsTask, camTask, denmTask, mapemTask, spatemTask, sremTask, ssemTask);
+			await Task.WhenAll(filesTask, countsTask, entitiesTask);
 
 			pcapFiles.Clear();
 			pcapFiles.AddRange((await filesTask) ?? new List<string>());
 			selectedFile ??= pcapFiles.FirstOrDefault();
 
-			recentPackets.Clear();
-			recentPackets.AddRange(((await packetsTask) ?? new List<Packet>()).OrderByDescending(packet => packet.Timestamp));
-
-			entityCount = ((await entitiesTask) ?? new List<MapEntityDto>()).Count;
-			correlationCount = ((await correlationsTask) ?? new List<CorrelationDto>()).Count;
+			var counts = await countsTask ?? new MessageCountsDto();
+			totalPacketCount  = counts.TotalPackets;
+			entityCount       = (await entitiesTask ?? new List<MapEntityDto>()).Count;
+			correlationCount  = counts.TotalCorrelations;
 
 			messageSummaryRows.Clear();
-			messageSummaryRows.Add(CreateMessageSummary("CAM", Color.Success, (await camTask) ?? new List<CAM>(), "Cooperative awareness from OBUs."));
-			messageSummaryRows.Add(CreateMessageSummary("DENM", Color.Error, (await denmTask) ?? new List<DENM>(), "Safety and hazard notifications."));
-			messageSummaryRows.Add(CreateMessageSummary("MAPEM", Color.Info, (await mapemTask) ?? new List<MAPEM>(), "RSU map and lane topology."));
-			messageSummaryRows.Add(CreateMessageSummary("SPATEM", Color.Warning, (await spatemTask) ?? new List<SPATEM>(), "Signal phase and timing state."));
-			messageSummaryRows.Add(CreateMessageSummary("SREM", Color.Secondary, (await sremTask) ?? new List<SREM>(), "Priority requests from vehicles."));
-			messageSummaryRows.Add(CreateMessageSummary("SSEM", Color.Dark, (await ssemTask) ?? new List<SSEM>(), "Signal status and acknowledgements."));
+			messageSummaryRows.Add(new MessageSummaryRow("CAM",    counts.CAM,    Color.Success,   "Cooperative awareness from OBUs."));
+			messageSummaryRows.Add(new MessageSummaryRow("DENM",   counts.DENM,   Color.Error,     "Safety and hazard notifications."));
+			messageSummaryRows.Add(new MessageSummaryRow("MAPEM",  counts.MAPEM,  Color.Info,      "RSU map and lane topology."));
+			messageSummaryRows.Add(new MessageSummaryRow("SPATEM", counts.SPATEM, Color.Warning,   "Signal phase and timing state."));
+			messageSummaryRows.Add(new MessageSummaryRow("SREM",   counts.SREM,   Color.Secondary, "Priority requests from vehicles."));
+			messageSummaryRows.Add(new MessageSummaryRow("SSEM",   counts.SSEM,   Color.Dark,      "Signal status and acknowledgements."));
 		}
 		catch (Exception ex)
 		{
@@ -290,30 +265,5 @@
 		}
 	}
 
-	private static string FormatEndpoint(string ipAddress, int port, string macAddress)
-	{
-		if (!string.IsNullOrWhiteSpace(ipAddress) && port > 0)
-		{
-			return $"{ipAddress}:{port}";
-		}
-
-		if (!string.IsNullOrWhiteSpace(ipAddress))
-		{
-			return ipAddress;
-		}
-
-		return string.IsNullOrWhiteSpace(macAddress) ? "n/a" : macAddress;
-	}
-
-	private static MessageSummaryRow CreateMessageSummary<TMessage>(string name, Color color, IReadOnlyCollection<TMessage> messages, string description)
-		where TMessage : V2XMessage
-	{
-		var latest = messages.Count == 0
-			? "No data"
-			: messages.Max(message => message.GenerationTime).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-
-		return new MessageSummaryRow(name, messages.Count, latest, description, color);
-	}
-
-	private sealed record MessageSummaryRow(string Name, int Count, string LatestLabel, string Description, Color Color);
+	private sealed record MessageSummaryRow(string Name, int Count, Color Color, string Description);
 }
