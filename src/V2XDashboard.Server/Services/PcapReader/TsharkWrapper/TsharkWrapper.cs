@@ -25,7 +25,7 @@ public class TsharkParser
         var parseStopwatch = Stopwatch.StartNew();
 
         var arguments = $"-r \"{pcapFilePath}\" -T json";
-    
+
         if (!string.IsNullOrEmpty(filter))
         {
             arguments += $" -Y \"{filter}\"";

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Shared;
@@ -56,10 +57,13 @@ public class PcapController : ControllerBase
     public async Task<IActionResult> ProcessAllPcapFiles()
     {
         try
-        {
+        {   
+            var totalStopwatch = Stopwatch.StartNew();
             var success = await _pcapService.ProcessAllPcapFilesAsync();
+            totalStopwatch.Stop();
             if (success)
             {
+                Console.WriteLine($"Total processing time for all PCAP files: {totalStopwatch.ElapsedMilliseconds}ms");
                 return Ok("Successfully processed all PCAP files");
             }
             else

@@ -506,150 +506,170 @@ public class PcapService : IPcapService
             p.PacketType == "SREM" ||
             p.PacketType == "SSEM").ToList();
 
-        foreach (var packet in v2xPackets)
-        {
-            // This is a simplified implementation
-            // Real V2X message parsing would require decoding the actual protocol data
-            await StoreV2XMessageFromPacketAsync(connection, transaction, packet);
-        }
+        // Group by message type and batch decode + store
+        var camPackets = v2xPackets.Where(p => p.PacketType == "CAM").ToList();
+        var denmPackets = v2xPackets.Where(p => p.PacketType == "DENM").ToList();
+        var mapemPackets = v2xPackets.Where(p => p.PacketType == "MAPEM").ToList();
+        var spatemPackets = v2xPackets.Where(p => p.PacketType == "SPATEM").ToList();
+        var sremPackets = v2xPackets.Where(p => p.PacketType == "SREM").ToList();
+        var ssemPackets = v2xPackets.Where(p => p.PacketType == "SSEM").ToList();
+
+        if (camPackets.Count > 0) await StoreCAMBatchAsync(connection, transaction, camPackets);
+        if (denmPackets.Count > 0) await StoreDENMBatchAsync(connection, transaction, denmPackets);
+        if (mapemPackets.Count > 0) await StoreMAPEMBatchAsync(connection, transaction, mapemPackets);
+        if (spatemPackets.Count > 0) await StoreSPATEMBatchAsync(connection, transaction, spatemPackets);
+        if (sremPackets.Count > 0) await StoreSREMBatchAsync(connection, transaction, sremPackets);
+        if (ssemPackets.Count > 0) await StoreSSEMBatchAsync(connection, transaction, ssemPackets);
     }
 
-    private async Task StoreV2XMessageFromPacketAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreCAMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        switch (packet.PacketType)
+        if (packets.Count == 0) return;
+
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
         {
-            case "CAM":
-                await StoreCAMAsync(connection, transaction, packet);
-                break;
-            case "DENM":
-                await StoreDENMAsync(connection, transaction, packet);
-                break;
-            case "MAPEM":
-                await StoreMAPEMAsync(connection, transaction, packet);
-                break;
-            case "SPATEM":
-                await StoreSPATEMAsync(connection, transaction, packet);
-                break;
-            case "SREM":
-                await StoreSREMAsync(connection, transaction, packet);
-                break;
-            case "SSEM":
-                await StoreSSEMAsync(connection, transaction, packet);
-                break;
-        }
-    }
-
-    private async Task StoreCAMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
-    {
-        var decoded = _v2xMessageDecoder.DecodeCAM(packet);
-
-        var query = @"
-            INSERT INTO cam_messages (packet_id, generation_time, station_id,
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var parameters = new DynamicParameters();
+            
+            var sql = @"INSERT INTO cam_messages (packet_id, generation_time, station_id,
                 latitude, longitude, altitude, speed, heading, station_type,
                 vehicle_role, acceleration, curvature, yaw_rate,
                 lateral_acceleration, vertical_acceleration, decode_status, vehicle_length, vehicle_width)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @Latitude, @Longitude, @Altitude, @Speed, @Heading, @StationType,
-                @VehicleRole, @Acceleration, @Curvature, @YawRate,
-                @LateralAcceleration, @VerticalAcceleration, @DecodeStatus, @VehicleLength, @VehicleWidth)";
-
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.Altitude,
-            decoded.Speed,
-            decoded.Heading,
-            decoded.StationType,
-            VehicleRole = string.IsNullOrWhiteSpace(decoded.VehicleRole) ? "unknown" : decoded.VehicleRole,
-            decoded.Acceleration,
-            decoded.Curvature,
-            decoded.YawRate,
-            decoded.LateralAcceleration,
-            decoded.VerticalAcceleration,
-            decoded.DecodeStatus,
-            decoded.VehicleLength,
-            decoded.VehicleWidth
-        };
-
-        await connection.ExecuteAsync(query, parameters, transaction);
+            VALUES ";
+            
+            var valueClauses = new List<string>();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var decoded = _v2xMessageDecoder.DecodeCAM(chunk[i]);
+                var p = i.ToString();
+                
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @lat{p}, @lon{p}, @alt{p}, @spd{p}, @hed{p}, @stype{p}, @vrole{p}, @acc{p}, @cur{p}, @yaw{p}, @lacc{p}, @vacc{p}, @dstat{p}, @vlen{p}, @vwid{p})");
+                
+                parameters.Add("@pid" + p, decoded.PacketId);
+                parameters.Add("@gen" + p, decoded.GenerationTime);
+                parameters.Add("@sid" + p, decoded.StationId);
+                parameters.Add("@lat" + p, decoded.Latitude);
+                parameters.Add("@lon" + p, decoded.Longitude);
+                parameters.Add("@alt" + p, decoded.Altitude);
+                parameters.Add("@spd" + p, decoded.Speed);
+                parameters.Add("@hed" + p, decoded.Heading);
+                parameters.Add("@stype" + p, decoded.StationType);
+                parameters.Add("@vrole" + p, string.IsNullOrWhiteSpace(decoded.VehicleRole) ? "unknown" : decoded.VehicleRole);
+                parameters.Add("@acc" + p, decoded.Acceleration);
+                parameters.Add("@cur" + p, decoded.Curvature);
+                parameters.Add("@yaw" + p, decoded.YawRate);
+                parameters.Add("@lacc" + p, decoded.LateralAcceleration);
+                parameters.Add("@vacc" + p, decoded.VerticalAcceleration);
+                parameters.Add("@dstat" + p, decoded.DecodeStatus);
+                parameters.Add("@vlen" + p, decoded.VehicleLength);
+                parameters.Add("@vwid" + p, decoded.VehicleWidth);
+            }
+            
+            sql += string.Join(", ", valueClauses);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+        }
     }
 
-    private async Task StoreDENMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreDENMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        var decoded = _v2xMessageDecoder.DecodeDENM(packet);
+        if (packets.Count == 0) return;
 
-        var query = @"
-            INSERT INTO denm_messages (packet_id, generation_time, station_id,
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var parameters = new DynamicParameters();
+            
+            var sql = @"INSERT INTO denm_messages (packet_id, generation_time, station_id,
                 cause_code, detection_time, reference_time,
                 latitude, longitude, altitude,
                 relevance_traffic_direction, validity_duration, station_type, awareness_traffic_direction, original_station_type)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @CauseCode, @DetectionTime, @ReferenceTime,
-                @Latitude, @Longitude, @Altitude,
-                @RelevanceTrafficDirection, @ValidityDuration, @StationType, @AwarenessTrafficDirection, @OriginalStationType)";
-
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            CauseCode = string.IsNullOrWhiteSpace(decoded.CauseCode) ? "unknown" : decoded.CauseCode,
-            decoded.DetectionTime,
-            decoded.ReferenceTime,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.Altitude,
-            decoded.RelevanceTrafficDirection,
-            decoded.ValidityDuration,
-            decoded.StationType,
-            decoded.AwarenessTrafficDirection,
-            decoded.OriginalStationType
-        };
-
-        await connection.ExecuteAsync(query, parameters, transaction);
+            VALUES ";
+            
+            var valueClauses = new List<string>();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var decoded = _v2xMessageDecoder.DecodeDENM(chunk[i]);
+                var p = i.ToString();
+                
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @cc{p}, @det{p}, @ref{p}, @lat{p}, @lon{p}, @alt{p}, @rtd{p}, @vd{p}, @st{p}, @atd{p}, @ost{p})");
+                
+                parameters.Add("@pid" + p, decoded.PacketId);
+                parameters.Add("@gen" + p, decoded.GenerationTime);
+                parameters.Add("@sid" + p, decoded.StationId);
+                parameters.Add("@cc" + p, string.IsNullOrWhiteSpace(decoded.CauseCode) ? "unknown" : decoded.CauseCode);
+                parameters.Add("@det" + p, decoded.DetectionTime);
+                parameters.Add("@ref" + p, decoded.ReferenceTime);
+                parameters.Add("@lat" + p, decoded.Latitude);
+                parameters.Add("@lon" + p, decoded.Longitude);
+                parameters.Add("@alt" + p, decoded.Altitude);
+                parameters.Add("@rtd" + p, decoded.RelevanceTrafficDirection);
+                parameters.Add("@vd" + p, decoded.ValidityDuration);
+                parameters.Add("@st" + p, decoded.StationType);
+                parameters.Add("@atd" + p, decoded.AwarenessTrafficDirection);
+                parameters.Add("@ost" + p, decoded.OriginalStationType);
+            }
+            
+            sql += string.Join(", ", valueClauses);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+        }
     }
 
-    private async Task StoreMAPEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreMAPEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        var decoded = _v2xMessageDecoder.DecodeMAPEM(packet);
+        if (packets.Count == 0) return;
 
-        var query = @"
-            INSERT INTO mapem_messages (packet_id, generation_time, station_id,
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var parameters = new DynamicParameters();
+            
+            var sql = @"INSERT INTO mapem_messages (packet_id, generation_time, station_id,
                 intersection_id, intersection_name, latitude, longitude,
                 lane_count, road_width, speed_limit, map_version, publisher_id)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @IntersectionId, @IntersectionName, @Latitude, @Longitude,
-                @LaneCount, @RoadWidth, @SpeedLimit, @MapVersion, @PublisherId)";
-
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            decoded.IntersectionId,
-            decoded.IntersectionName,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.LaneCount,
-            decoded.RoadWidth,
-            decoded.SpeedLimit,
-            MapVersion = string.IsNullOrWhiteSpace(decoded.MapVersion) ? "1.0" : decoded.MapVersion,
-            decoded.PublisherId
-        };
-
-        await connection.ExecuteAsync(query, parameters, transaction);
+            VALUES ";
+            
+            var valueClauses = new List<string>();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var decoded = _v2xMessageDecoder.DecodeMAPEM(chunk[i]);
+                var p = i.ToString();
+                
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @lc{p}, @rw{p}, @sl{p}, @mv{p}, @pub{p})");
+                
+                parameters.Add("@pid" + p, decoded.PacketId);
+                parameters.Add("@gen" + p, decoded.GenerationTime);
+                parameters.Add("@sid" + p, decoded.StationId);
+                parameters.Add("@iid" + p, decoded.IntersectionId);
+                parameters.Add("@in" + p, decoded.IntersectionName);
+                parameters.Add("@lat" + p, decoded.Latitude);
+                parameters.Add("@lon" + p, decoded.Longitude);
+                parameters.Add("@lc" + p, decoded.LaneCount);
+                parameters.Add("@rw" + p, decoded.RoadWidth);
+                parameters.Add("@sl" + p, decoded.SpeedLimit);
+                parameters.Add("@mv" + p, string.IsNullOrWhiteSpace(decoded.MapVersion) ? "1.0" : decoded.MapVersion);
+                parameters.Add("@pub" + p, decoded.PublisherId);
+            }
+            
+            sql += string.Join(", ", valueClauses);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+        }
     }
 
-    private async Task StoreSPATEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreSPATEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        var decoded = _v2xMessageDecoder.DecodeSPATEM(packet);
+        if (packets.Count == 0) return;
 
-        var query = @"
-            INSERT INTO spatem_messages (packet_id, generation_time, station_id,
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var decodedList = chunk.Select(p => _v2xMessageDecoder.DecodeSPATEM(p)).ToList();
+
+            var sql = new System.Text.StringBuilder();
+            sql.AppendLine(@"INSERT INTO spatem_messages (packet_id, generation_time, station_id,
                 intersection_id, intersection_name, latitude, longitude,
                 current_phase, phase_state, connection_maneuver_assist_id,
                 phase0_signal_group, phase1_signal_group, phase2_signal_group,
@@ -662,139 +682,192 @@ public class PcapService : IPcapService
                 phase3_connection_maneuver_assist_id0, phase3_connection_maneuver_assist_id1,
                 phase4_connection_maneuver_assist_id0, phase4_connection_maneuver_assist_id1,
                 phase5_connection_maneuver_assist_id0, phase5_connection_maneuver_assist_id1,
-                publisher_id)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @IntersectionId, @IntersectionName, @Latitude, @Longitude,
-                @CurrentPhase, @PhaseState, @ConnectionManeuverAssistId,
-                @Phase0SignalGroup, @Phase1SignalGroup, @Phase2SignalGroup,
-                @Phase3SignalGroup, @Phase4SignalGroup, @Phase5SignalGroup,
-                @Phase0EventState, @Phase1EventState, @Phase2EventState,
-                @Phase3EventState, @Phase4EventState, @Phase5EventState,
-                @Phase0ConnectionManeuverAssistId0, @Phase0ConnectionManeuverAssistId1,
-                @Phase1ConnectionManeuverAssistId0, @Phase1ConnectionManeuverAssistId1,
-                @Phase2ConnectionManeuverAssistId0, @Phase2ConnectionManeuverAssistId1,
-                @Phase3ConnectionManeuverAssistId0, @Phase3ConnectionManeuverAssistId1,
-                @Phase4ConnectionManeuverAssistId0, @Phase4ConnectionManeuverAssistId1,
-                @Phase5ConnectionManeuverAssistId0, @Phase5ConnectionManeuverAssistId1,
-                @PublisherId)";
+                publisher_id)");
+            sql.AppendLine("VALUES");
 
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            decoded.IntersectionId,
-            decoded.IntersectionName,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.CurrentPhase,
-            decoded.ConnectionManeuverAssistId,
-            decoded.Phase0SignalGroup,
-            decoded.Phase1SignalGroup,
-            decoded.Phase2SignalGroup,
-            decoded.Phase3SignalGroup,
-            decoded.Phase4SignalGroup,
-            decoded.Phase5SignalGroup,
-            decoded.Phase0EventState,
-            decoded.Phase1EventState,
-            decoded.Phase2EventState,
-            decoded.Phase3EventState,
-            decoded.Phase4EventState,
-            decoded.Phase5EventState,
-            decoded.Phase0ConnectionManeuverAssistId0,
-            decoded.Phase0ConnectionManeuverAssistId1,
-            decoded.Phase1ConnectionManeuverAssistId0,
-            decoded.Phase1ConnectionManeuverAssistId1,
-            decoded.Phase2ConnectionManeuverAssistId0,
-            decoded.Phase2ConnectionManeuverAssistId1,
-            decoded.Phase3ConnectionManeuverAssistId0,
-            decoded.Phase3ConnectionManeuverAssistId1,
-            decoded.Phase4ConnectionManeuverAssistId0,
-            decoded.Phase4ConnectionManeuverAssistId1,
-            decoded.Phase5ConnectionManeuverAssistId0,
-            decoded.Phase5ConnectionManeuverAssistId1,
-            PhaseState = string.IsNullOrWhiteSpace(decoded.PhaseState) ? "unknown" : decoded.PhaseState,
-            decoded.PublisherId
-        };
+            var parameters = new DynamicParameters();
+            for (var i = 0; i < decodedList.Count; i++)
+            {
+                var decoded = decodedList[i];
+                var suffix = "_" + i;
 
-        await connection.ExecuteAsync(query, parameters, transaction);
+                if (i > 0) sql.AppendLine(",");
+
+                var paramList = new[] {
+                    "@PacketId" + suffix,
+                    "@GenerationTime" + suffix,
+                    "@StationId" + suffix,
+                    "@IntersectionId" + suffix,
+                    "@IntersectionName" + suffix,
+                    "@Latitude" + suffix,
+                    "@Longitude" + suffix,
+                    "@CurrentPhase" + suffix,
+                    "@PhaseState" + suffix,
+                    "@ConnectionManeuverAssistId" + suffix,
+                    "@Phase0SignalGroup" + suffix,
+                    "@Phase1SignalGroup" + suffix,
+                    "@Phase2SignalGroup" + suffix,
+                    "@Phase3SignalGroup" + suffix,
+                    "@Phase4SignalGroup" + suffix,
+                    "@Phase5SignalGroup" + suffix,
+                    "@Phase0EventState" + suffix,
+                    "@Phase1EventState" + suffix,
+                    "@Phase2EventState" + suffix,
+                    "@Phase3EventState" + suffix,
+                    "@Phase4EventState" + suffix,
+                    "@Phase5EventState" + suffix,
+                    "@Phase0ConnectionManeuverAssistId0" + suffix,
+                    "@Phase0ConnectionManeuverAssistId1" + suffix,
+                    "@Phase1ConnectionManeuverAssistId0" + suffix,
+                    "@Phase1ConnectionManeuverAssistId1" + suffix,
+                    "@Phase2ConnectionManeuverAssistId0" + suffix,
+                    "@Phase2ConnectionManeuverAssistId1" + suffix,
+                    "@Phase3ConnectionManeuverAssistId0" + suffix,
+                    "@Phase3ConnectionManeuverAssistId1" + suffix,
+                    "@Phase4ConnectionManeuverAssistId0" + suffix,
+                    "@Phase4ConnectionManeuverAssistId1" + suffix,
+                    "@Phase5ConnectionManeuverAssistId0" + suffix,
+                    "@Phase5ConnectionManeuverAssistId1" + suffix,
+                    "@PublisherId" + suffix
+                };
+
+                sql.Append("(" + string.Join(", ", paramList) + ")");
+
+                parameters.Add("@PacketId" + suffix, decoded.PacketId);
+                parameters.Add("@GenerationTime" + suffix, decoded.GenerationTime);
+                parameters.Add("@StationId" + suffix, decoded.StationId);
+                parameters.Add("@IntersectionId" + suffix, decoded.IntersectionId);
+                parameters.Add("@IntersectionName" + suffix, decoded.IntersectionName);
+                parameters.Add("@Latitude" + suffix, decoded.Latitude);
+                parameters.Add("@Longitude" + suffix, decoded.Longitude);
+                parameters.Add("@CurrentPhase" + suffix, decoded.CurrentPhase);
+                parameters.Add("@PhaseState" + suffix, string.IsNullOrWhiteSpace(decoded.PhaseState) ? "unknown" : decoded.PhaseState);
+                parameters.Add("@ConnectionManeuverAssistId" + suffix, decoded.ConnectionManeuverAssistId);
+                parameters.Add("@Phase0SignalGroup" + suffix, decoded.Phase0SignalGroup);
+                parameters.Add("@Phase1SignalGroup" + suffix, decoded.Phase1SignalGroup);
+                parameters.Add("@Phase2SignalGroup" + suffix, decoded.Phase2SignalGroup);
+                parameters.Add("@Phase3SignalGroup" + suffix, decoded.Phase3SignalGroup);
+                parameters.Add("@Phase4SignalGroup" + suffix, decoded.Phase4SignalGroup);
+                parameters.Add("@Phase5SignalGroup" + suffix, decoded.Phase5SignalGroup);
+                parameters.Add("@Phase0EventState" + suffix, decoded.Phase0EventState);
+                parameters.Add("@Phase1EventState" + suffix, decoded.Phase1EventState);
+                parameters.Add("@Phase2EventState" + suffix, decoded.Phase2EventState);
+                parameters.Add("@Phase3EventState" + suffix, decoded.Phase3EventState);
+                parameters.Add("@Phase4EventState" + suffix, decoded.Phase4EventState);
+                parameters.Add("@Phase5EventState" + suffix, decoded.Phase5EventState);
+                parameters.Add("@Phase0ConnectionManeuverAssistId0" + suffix, decoded.Phase0ConnectionManeuverAssistId0);
+                parameters.Add("@Phase0ConnectionManeuverAssistId1" + suffix, decoded.Phase0ConnectionManeuverAssistId1);
+                parameters.Add("@Phase1ConnectionManeuverAssistId0" + suffix, decoded.Phase1ConnectionManeuverAssistId0);
+                parameters.Add("@Phase1ConnectionManeuverAssistId1" + suffix, decoded.Phase1ConnectionManeuverAssistId1);
+                parameters.Add("@Phase2ConnectionManeuverAssistId0" + suffix, decoded.Phase2ConnectionManeuverAssistId0);
+                parameters.Add("@Phase2ConnectionManeuverAssistId1" + suffix, decoded.Phase2ConnectionManeuverAssistId1);
+                parameters.Add("@Phase3ConnectionManeuverAssistId0" + suffix, decoded.Phase3ConnectionManeuverAssistId0);
+                parameters.Add("@Phase3ConnectionManeuverAssistId1" + suffix, decoded.Phase3ConnectionManeuverAssistId1);
+                parameters.Add("@Phase4ConnectionManeuverAssistId0" + suffix, decoded.Phase4ConnectionManeuverAssistId0);
+                parameters.Add("@Phase4ConnectionManeuverAssistId1" + suffix, decoded.Phase4ConnectionManeuverAssistId1);
+                parameters.Add("@Phase5ConnectionManeuverAssistId0" + suffix, decoded.Phase5ConnectionManeuverAssistId0);
+                parameters.Add("@Phase5ConnectionManeuverAssistId1" + suffix, decoded.Phase5ConnectionManeuverAssistId1);
+                parameters.Add("@PublisherId" + suffix, decoded.PublisherId);
+            }
+
+            await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
+        }
     }
 
-    private async Task StoreSREMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreSREMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        var decoded = _v2xMessageDecoder.DecodeSREM(packet);
+        if (packets.Count == 0) return;
 
-        var query = @"
-            INSERT INTO srem_messages (packet_id, generation_time, station_id,
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var parameters = new DynamicParameters();
+            
+            var sql = @"INSERT INTO srem_messages (packet_id, generation_time, station_id,
                 intersection_name, intersection_id, latitude, longitude,
                 requested_phase, vehicle_type, request_reason,
                 request_id, requestor_id, required_accuracy,
                 in_bound_lane_id, out_bound_lane_id, heading, speed, transmission_power,
                 route_names, transit_schedule, requestor_name)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @IntersectionName, @IntersectionId, @Latitude, @Longitude,
-                @RequestedPhase, @VehicleType, @RequestReason,
-                @RequestId, @RequestorId, @RequiredAccuracy,
-                @InBoundLaneId, @OutBoundLaneId, @Heading, @Speed, @TransmissionPower,
-                @RouteNames, @TransitSchedule, @RequestorName)";
-
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            decoded.IntersectionName,
-            decoded.IntersectionId,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.RequestedPhase,
-            decoded.VehicleType,
-            decoded.RequestReason,
-            decoded.RequestId,
-            decoded.RequestorId,
-            decoded.RequiredAccuracy,
-            decoded.InBoundLaneId,
-            decoded.OutBoundLaneId,
-            decoded.Heading,
-            decoded.Speed,
-            decoded.TransmissionPower,
-            decoded.routeNames,
-            decoded.transitSchedule,
-            decoded.RequestorName
-        };
-
-        await connection.ExecuteAsync(query, parameters, transaction);
+            VALUES ";
+            
+            var valueClauses = new List<string>();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var decoded = _v2xMessageDecoder.DecodeSREM(chunk[i]);
+                var p = i.ToString();
+                
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @in{p}, @iid{p}, @lat{p}, @lon{p}, @rp{p}, @vt{p}, @rr{p}, @rid{p}, @reqid{p}, @ra{p}, @ibli{p}, @obli{p}, @h{p}, @s{p}, @tp{p}, @rn{p}, @ts{p}, @rname{p})");
+                
+                parameters.Add("@pid" + p, decoded.PacketId);
+                parameters.Add("@gen" + p, decoded.GenerationTime);
+                parameters.Add("@sid" + p, decoded.StationId);
+                parameters.Add("@in" + p, decoded.IntersectionName);
+                parameters.Add("@iid" + p, decoded.IntersectionId);
+                parameters.Add("@lat" + p, decoded.Latitude);
+                parameters.Add("@lon" + p, decoded.Longitude);
+                parameters.Add("@rp" + p, decoded.RequestedPhase);
+                parameters.Add("@vt" + p, decoded.VehicleType);
+                parameters.Add("@rr" + p, decoded.RequestReason);
+                parameters.Add("@rid" + p, decoded.RequestId);
+                parameters.Add("@reqid" + p, decoded.RequestorId);
+                parameters.Add("@ra" + p, decoded.RequiredAccuracy);
+                parameters.Add("@ibli" + p, decoded.InBoundLaneId);
+                parameters.Add("@obli" + p, decoded.OutBoundLaneId);
+                parameters.Add("@h" + p, decoded.Heading);
+                parameters.Add("@s" + p, decoded.Speed);
+                parameters.Add("@tp" + p, decoded.TransmissionPower);
+                parameters.Add("@rn" + p, decoded.routeNames);
+                parameters.Add("@ts" + p, decoded.transitSchedule);
+                parameters.Add("@rname" + p, decoded.RequestorName);
+            }
+            
+            sql += string.Join(", ", valueClauses);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+        }
     }
 
-    private async Task StoreSSEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
+    private async Task StoreSSEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
     {
-        var decoded = _v2xMessageDecoder.DecodeSSEM(packet);
+        if (packets.Count == 0) return;
 
-        var query = @"
-            INSERT INTO ssem_messages (packet_id, generation_time, station_id,
+        const int batchSize = 500;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var parameters = new DynamicParameters();
+            
+            var sql = @"INSERT INTO ssem_messages (packet_id, generation_time, station_id,
                 intersection_id, intersection_name, latitude, longitude,
                 status_code, granted_duration, request_id_ref, responder_id, request_station_id_ref)
-            VALUES (@PacketId, @GenerationTime, @StationId,
-                @IntersectionId, @IntersectionName, @Latitude, @Longitude,
-                @StatusCode, @GrantedDuration, @RequestIdRef, @ResponderId, @RequestStationIdRef)";
-
-        var parameters = new
-        {
-            decoded.PacketId,
-            decoded.GenerationTime,
-            decoded.StationId,
-            decoded.IntersectionName,
-            decoded.Latitude,
-            decoded.Longitude,
-            decoded.IntersectionId,
-            StatusCode = string.IsNullOrWhiteSpace(decoded.StatusCode) ? "pending" : decoded.StatusCode,
-            decoded.GrantedDuration,
-            decoded.RequestIdRef,
-            decoded.RequestStationIdRef,
-            decoded.ResponderId
-        };
-
-        await connection.ExecuteAsync(query, parameters, transaction);
+            VALUES ";
+            
+            var valueClauses = new List<string>();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var decoded = _v2xMessageDecoder.DecodeSSEM(chunk[i]);
+                var p = i.ToString();
+                
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @sc{p}, @gd{p}, @rid{p}, @rid2{p}, @rsid{p})");
+                
+                parameters.Add("@pid" + p, decoded.PacketId);
+                parameters.Add("@gen" + p, decoded.GenerationTime);
+                parameters.Add("@sid" + p, decoded.StationId);
+                parameters.Add("@iid" + p, decoded.IntersectionId);
+                parameters.Add("@in" + p, decoded.IntersectionName);
+                parameters.Add("@lat" + p, decoded.Latitude);
+                parameters.Add("@lon" + p, decoded.Longitude);
+                parameters.Add("@sc" + p, string.IsNullOrWhiteSpace(decoded.StatusCode) ? "pending" : decoded.StatusCode);
+                parameters.Add("@gd" + p, decoded.GrantedDuration);
+                parameters.Add("@rid" + p, decoded.RequestIdRef);
+                parameters.Add("@rid2" + p, decoded.ResponderId);
+                parameters.Add("@rsid" + p, decoded.RequestStationIdRef);
+            }
+            
+            sql += string.Join(", ", valueClauses);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+        }
     }
 
     private async Task PopulateIntersectionMetadataForFileAsync(string fileName)
@@ -905,251 +978,187 @@ public class PcapService : IPcapService
         {
             using var connection = new NpgsqlConnection(_connectionString);
 
-            // Query all SREM messages that can be matched to SSEM responses.
-            var sremsQuery = @"
-                SELECT s.id, s.request_id, s.requestor_id, s.station_id, s.intersection_id, s.intersection_name, s.generation_time
-                FROM srem_messages s
-                WHERE s.generation_time IS NOT NULL
-                ORDER BY s.generation_time ASC";
+            const int timeWindowSeconds = 10;
 
-            var srems = await connection.QueryAsync<dynamic>(sremsQuery);
+            const string correlationQuery = @"
+                WITH strict_candidates AS (
+                    SELECT
+                        s.id AS srem_id,
+                        ss.id AS ssem_id,
+                        s.requestor_id AS obu_station_id,
+                        ss.responder_id AS rsu_intersection_id,
+                        s.request_id AS request_id,
+                        s.generation_time AS srem_timestamp,
+                        ss.generation_time AS ssem_timestamp,
+                        (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
+                        COALESCE(ss.status_code, 'unknown') AS status_code,
+                        COALESCE(ss.granted_duration, 0) AS granted_duration,
+                        'strict'::VARCHAR(20) AS correlation_type,
+                        1.0::NUMERIC(3,2) AS match_confidence,
+                        1 AS strategy_order
+                    FROM srem_messages s
+                    JOIN ssem_messages ss
+                      ON ss.request_id_ref = s.request_id
+                     AND ss.generation_time BETWEEN s.generation_time - (@WindowSeconds * INTERVAL '1 second')
+                                               AND s.generation_time + (@WindowSeconds * INTERVAL '1 second')
+                    WHERE s.generation_time IS NOT NULL
+                      AND NULLIF(TRIM(s.request_id), '') IS NOT NULL
+                ),
+                fallback_by_intersection_id AS (
+                    SELECT
+                        s.id AS srem_id,
+                        ss.id AS ssem_id,
+                        s.requestor_id AS obu_station_id,
+                        ss.responder_id AS rsu_intersection_id,
+                        s.request_id AS request_id,
+                        s.generation_time AS srem_timestamp,
+                        ss.generation_time AS ssem_timestamp,
+                        (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
+                        COALESCE(ss.status_code, 'unknown') AS status_code,
+                        COALESCE(ss.granted_duration, 0) AS granted_duration,
+                        'fallback'::VARCHAR(20) AS correlation_type,
+                        0.7::NUMERIC(3,2) AS match_confidence,
+                        2 AS strategy_order
+                    FROM srem_messages s
+                    JOIN ssem_messages ss
+                      ON ss.intersection_id = s.intersection_id
+                     AND ss.generation_time BETWEEN s.generation_time - (@WindowSeconds * INTERVAL '1 second')
+                                               AND s.generation_time + (@WindowSeconds * INTERVAL '1 second')
+                    WHERE s.generation_time IS NOT NULL
+                      AND s.intersection_id IS NOT NULL
+                      AND s.intersection_id > 0
+                ),
+                fallback_by_intersection_name AS (
+                    SELECT
+                        s.id AS srem_id,
+                        ss.id AS ssem_id,
+                        s.requestor_id AS obu_station_id,
+                        ss.responder_id AS rsu_intersection_id,
+                        s.request_id AS request_id,
+                        s.generation_time AS srem_timestamp,
+                        ss.generation_time AS ssem_timestamp,
+                        (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
+                        COALESCE(ss.status_code, 'unknown') AS status_code,
+                        COALESCE(ss.granted_duration, 0) AS granted_duration,
+                        'fallback'::VARCHAR(20) AS correlation_type,
+                        0.6::NUMERIC(3,2) AS match_confidence,
+                        3 AS strategy_order
+                    FROM srem_messages s
+                    JOIN ssem_messages ss
+                      ON LOWER(TRIM(ss.intersection_name)) = LOWER(TRIM(s.intersection_name))
+                     AND ss.generation_time BETWEEN s.generation_time - (@WindowSeconds * INTERVAL '1 second')
+                                               AND s.generation_time + (@WindowSeconds * INTERVAL '1 second')
+                    WHERE s.generation_time IS NOT NULL
+                      AND NULLIF(TRIM(s.intersection_name), '') IS NOT NULL
+                ),
+                fallback_by_station_ref AS (
+                    SELECT
+                        s.id AS srem_id,
+                        ss.id AS ssem_id,
+                        s.requestor_id AS obu_station_id,
+                        ss.responder_id AS rsu_intersection_id,
+                        s.request_id AS request_id,
+                        s.generation_time AS srem_timestamp,
+                        ss.generation_time AS ssem_timestamp,
+                        (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
+                        COALESCE(ss.status_code, 'unknown') AS status_code,
+                        COALESCE(ss.granted_duration, 0) AS granted_duration,
+                        'fallback'::VARCHAR(20) AS correlation_type,
+                        0.5::NUMERIC(3,2) AS match_confidence,
+                        4 AS strategy_order
+                    FROM srem_messages s
+                    JOIN ssem_messages ss
+                      ON ss.request_station_id_ref = s.station_id
+                     AND ss.generation_time BETWEEN s.generation_time - (@WindowSeconds * INTERVAL '1 second')
+                                               AND s.generation_time + (@WindowSeconds * INTERVAL '1 second')
+                    WHERE s.generation_time IS NOT NULL
+                      AND NULLIF(TRIM(s.station_id), '') IS NOT NULL
+                ),
+                candidates AS (
+                    SELECT * FROM strict_candidates
+                    UNION ALL
+                    SELECT * FROM fallback_by_intersection_id
+                    UNION ALL
+                    SELECT * FROM fallback_by_intersection_name
+                    UNION ALL
+                    SELECT * FROM fallback_by_station_ref
+                ),
+                ranked AS (
+                    SELECT
+                        c.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY c.srem_id
+                            ORDER BY c.strategy_order ASC, ABS(c.time_delta_ms) ASC
+                        ) AS rn
+                    FROM candidates c
+                ),
+                chosen AS (
+                    SELECT *
+                    FROM ranked
+                    WHERE rn = 1
+                ),
+                inserted AS (
+                    INSERT INTO obu_rsu_correlations (
+                        srem_id, ssem_id, mapem_id, spatem_id,
+                        obu_station_id, rsu_intersection_id, request_id, correlation_type,
+                        match_confidence, srem_timestamp, ssem_timestamp, time_delta_ms,
+                        request_type, status_code, granted_duration)
+                    SELECT
+                        c.srem_id,
+                        c.ssem_id,
+                        NULL,
+                        NULL,
+                        c.obu_station_id,
+                        c.rsu_intersection_id,
+                        c.request_id,
+                        c.correlation_type,
+                        c.match_confidence,
+                        c.srem_timestamp,
+                        c.ssem_timestamp,
+                        c.time_delta_ms,
+                        'signal_request',
+                        c.status_code,
+                        c.granted_duration
+                    FROM chosen c
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM obu_rsu_correlations existing
+                        WHERE existing.srem_id = c.srem_id
+                          AND existing.ssem_id = c.ssem_id
+                    )
+                    RETURNING correlation_type
+                )
+                SELECT
+                    (SELECT COUNT(*) FROM srem_messages s WHERE s.generation_time IS NOT NULL) AS ""TotalSrems"",
+                    (SELECT COUNT(*) FROM chosen) AS ""SelectedCandidates"",
+                    (SELECT COUNT(*) FROM inserted) AS ""InsertedTotal"",
+                    (SELECT COUNT(*) FROM inserted WHERE correlation_type = 'strict') AS ""InsertedStrict"",
+                    (SELECT COUNT(*) FROM inserted WHERE correlation_type = 'fallback') AS ""InsertedFallback"";
+            ";
 
-            // Symmetric time window for strict/fallback matching (+/-10s).
-            const int TIME_WINDOW_MS = 10000;
-
-            int totalSrems = 0;
-            int strictMatches = 0;
-            int fallbackMatchesByIntersectionId = 0;
-            int fallbackMatchesByIntersectionName = 0;
-            int fallbackMatchesByStationRef = 0;
-            int skippedMissingRequestId = 0;
-            int skippedMissingIntersection = 0;
-            int duplicatePairsSkipped = 0;
-
-            foreach (var srem in srems)
-            {
-                totalSrems++;
-
-                string? sremRequestId = srem.request_id;
-                string? sremRequestorId = srem.requestor_id;
-                string? sremStationId = srem.station_id;
-                int? sremIntersectionId = srem.intersection_id;
-                string? sremIntersectionName = srem.intersection_name;
-                DateTime sremTime = srem.generation_time;
-                int sremId = srem.id;
-
-                var startTime = sremTime.AddMilliseconds(-TIME_WINDOW_MS);
-                var endTime = sremTime.AddMilliseconds(TIME_WINDOW_MS);
-
-                // Strategy 1: Strict match using requestId
-                if (!string.IsNullOrWhiteSpace(sremRequestId))
-                {
-                    var ssemQuery = @"
-                        SELECT id, responder_id, granted_duration, status_code, generation_time
-                        FROM ssem_messages
-                        WHERE request_id_ref = @RequestId
-                        AND generation_time BETWEEN @StartTime AND @EndTime
-                        ORDER BY ABS(EXTRACT(EPOCH FROM (generation_time - @SremTime)))
-                        LIMIT 1";
-
-                    var ssem = await connection.QueryFirstOrDefaultAsync<dynamic>(ssemQuery, new
-                    {
-                        RequestId = sremRequestId,
-                        StartTime = startTime,
-                        EndTime = endTime,
-                        SremTime = sremTime
-                    });
-
-                    if (ssem != null && ssem.generation_time != null)
-                    {
-#pragma warning disable CS8602 // Dereference of possibly null reference - safe due to null check above
-                        int ssemId = ssem.id;
-                        string? responderId = (string?)ssem.responder_id;
-                        int grantedDuration = (int?)ssem.granted_duration ?? 0;
-                        string statusCode = (string?)ssem.status_code ?? "unknown";
-#pragma warning restore CS8602
-                        DateTime ssemTime = (DateTime)ssem.generation_time;
-                        int timeDelta = (int)((ssemTime - sremTime).TotalMilliseconds);
-
-                        if (await CorrelationExistsAsync(connection, sremId, ssemId))
-                        {
-                            duplicatePairsSkipped++;
-                            continue;
-                        }
-
-                        await RecordCorrelationAsync(connection, sremId, ssemId, null, null,
-                            sremRequestorId, responderId, sremRequestId, "strict",
-                            1.0, sremTime, ssemTime, timeDelta,
-                            "signal_request", statusCode, grantedDuration);
-
-                        strictMatches++;
-                        continue;
-                    }
-                }
-                else
-                {
-                    skippedMissingRequestId++;
-                }
-
-                // Strategy 2a: Fallback match by intersectionId + symmetric time window.
-                if (sremIntersectionId.HasValue && sremIntersectionId > 0)
-                {
-                    var fallbackSsemQuery = @"
-                        SELECT id, responder_id, granted_duration, status_code, generation_time
-                        FROM ssem_messages
-                        WHERE intersection_id = @IntersectionId
-                        AND generation_time BETWEEN @StartTime AND @EndTime
-                        ORDER BY ABS(EXTRACT(EPOCH FROM (generation_time - @SremTime)))
-                        LIMIT 1";
-
-                    var fallbackSsem = await connection.QueryFirstOrDefaultAsync<dynamic>(fallbackSsemQuery, new
-                    {
-                        IntersectionId = sremIntersectionId,
-                        StartTime = startTime,
-                        EndTime = endTime,
-                        SremTime = sremTime
-                    });
-
-                    if (fallbackSsem != null && fallbackSsem.generation_time != null)
-                    {
-#pragma warning disable CS8602 // Dereference of possibly null reference - safe due to null check above
-                        int ssemId = fallbackSsem.id;
-                        string? responderId = (string?)fallbackSsem.responder_id;
-                        int grantedDuration = (int?)fallbackSsem.granted_duration ?? 0;
-                        string statusCode = (string?)fallbackSsem.status_code ?? "unknown";
-#pragma warning restore CS8602
-                        DateTime ssemTime = (DateTime)fallbackSsem.generation_time;
-                        int timeDelta = (int)((ssemTime - sremTime).TotalMilliseconds);
-
-                        if (await CorrelationExistsAsync(connection, sremId, ssemId))
-                        {
-                            duplicatePairsSkipped++;
-                            continue;
-                        }
-
-                        // Fallback confidence is lower (0.7) than strict match (1.0)
-                        await RecordCorrelationAsync(connection, sremId, ssemId, null, null,
-                            sremRequestorId, responderId, sremRequestId, "fallback",
-                            0.7, sremTime, ssemTime, timeDelta,
-                            "signal_request", statusCode, grantedDuration);
-
-                        fallbackMatchesByIntersectionId++;
-                        continue;
-                    }
-                }
-
-                // Strategy 2b: Fallback by intersection name if intersectionId is missing.
-                if (!string.IsNullOrWhiteSpace(sremIntersectionName))
-                {
-                    var fallbackByNameSsemQuery = @"
-                        SELECT id, responder_id, granted_duration, status_code, generation_time
-                        FROM ssem_messages
-                        WHERE intersection_name IS NOT NULL
-                        AND LOWER(TRIM(intersection_name)) = LOWER(TRIM(@IntersectionName))
-                        AND generation_time BETWEEN @StartTime AND @EndTime
-                        ORDER BY ABS(EXTRACT(EPOCH FROM (generation_time - @SremTime)))
-                        LIMIT 1";
-
-                    var fallbackByNameSsem = await connection.QueryFirstOrDefaultAsync<dynamic>(fallbackByNameSsemQuery, new
-                    {
-                        IntersectionName = sremIntersectionName,
-                        StartTime = startTime,
-                        EndTime = endTime,
-                        SremTime = sremTime
-                    });
-
-                    if (fallbackByNameSsem != null && fallbackByNameSsem.generation_time != null)
-                    {
-#pragma warning disable CS8602 // Dereference of possibly null reference - safe due to null check above
-                        int ssemId = fallbackByNameSsem.id;
-                        string? responderId = (string?)fallbackByNameSsem.responder_id;
-                        int grantedDuration = (int?)fallbackByNameSsem.granted_duration ?? 0;
-                        string statusCode = (string?)fallbackByNameSsem.status_code ?? "unknown";
-#pragma warning restore CS8602
-                        DateTime ssemTime = (DateTime)fallbackByNameSsem.generation_time;
-                        int timeDelta = (int)((ssemTime - sremTime).TotalMilliseconds);
-
-                        if (await CorrelationExistsAsync(connection, sremId, ssemId))
-                        {
-                            duplicatePairsSkipped++;
-                            continue;
-                        }
-
-                        await RecordCorrelationAsync(connection, sremId, ssemId, null, null,
-                            sremRequestorId, responderId, sremRequestId, "fallback",
-                            0.6, sremTime, ssemTime, timeDelta,
-                            "signal_request", statusCode, grantedDuration);
-
-                        fallbackMatchesByIntersectionName++;
-                        continue;
-                    }
-                }
-
-                // Strategy 2c: Fallback by OBU station id vs. SSEM request station id reference.
-                if (!string.IsNullOrWhiteSpace(sremStationId))
-                {
-                    var fallbackByStationQuery = @"
-                        SELECT id, responder_id, granted_duration, status_code, generation_time
-                        FROM ssem_messages
-                        WHERE request_station_id_ref = @StationId
-                        AND generation_time BETWEEN @StartTime AND @EndTime
-                        ORDER BY ABS(EXTRACT(EPOCH FROM (generation_time - @SremTime)))
-                        LIMIT 1";
-
-                    var fallbackByStationSsem = await connection.QueryFirstOrDefaultAsync<dynamic>(fallbackByStationQuery, new
-                    {
-                        StationId = sremStationId,
-                        StartTime = startTime,
-                        EndTime = endTime,
-                        SremTime = sremTime
-                    });
-
-                    if (fallbackByStationSsem != null && fallbackByStationSsem.generation_time != null)
-                    {
-#pragma warning disable CS8602 // Dereference of possibly null reference - safe due to null check above
-                        int ssemId = fallbackByStationSsem.id;
-                        string? responderId = (string?)fallbackByStationSsem.responder_id;
-                        int grantedDuration = (int?)fallbackByStationSsem.granted_duration ?? 0;
-                        string statusCode = (string?)fallbackByStationSsem.status_code ?? "unknown";
-#pragma warning restore CS8602
-                        DateTime ssemTime = (DateTime)fallbackByStationSsem.generation_time;
-                        int timeDelta = (int)((ssemTime - sremTime).TotalMilliseconds);
-
-                        if (await CorrelationExistsAsync(connection, sremId, ssemId))
-                        {
-                            duplicatePairsSkipped++;
-                            continue;
-                        }
-
-                        await RecordCorrelationAsync(connection, sremId, ssemId, null, null,
-                            sremRequestorId, responderId, sremRequestId, "fallback",
-                            0.5, sremTime, ssemTime, timeDelta,
-                            "signal_request", statusCode, grantedDuration);
-
-                        fallbackMatchesByStationRef++;
-                        continue;
-                    }
-                }
-
-                if (!sremIntersectionId.HasValue || sremIntersectionId <= 0)
-                {
-                    skippedMissingIntersection++;
-                }
-            }
+            var summary = await connection.QuerySingleAsync<CorrelationSummaryRow>(
+                correlationQuery,
+                new { WindowSeconds = timeWindowSeconds });
 
             Console.WriteLine(
-                $"Correlation summary: scanned={totalSrems}, strict={strictMatches}, " +
-                $"fallbackByIntersectionId={fallbackMatchesByIntersectionId}, " +
-                $"fallbackByIntersectionName={fallbackMatchesByIntersectionName}, " +
-                $"fallbackByStationRef={fallbackMatchesByStationRef}, " +
-                $"missingRequestId={skippedMissingRequestId}, missingIntersection={skippedMissingIntersection}, " +
-                $"duplicatesSkipped={duplicatePairsSkipped}");
+                $"Correlation summary (set-based): scanned={summary.TotalSrems}, selected={summary.SelectedCandidates}, " +
+                $"inserted={summary.InsertedTotal}, strict={summary.InsertedStrict}, fallback={summary.InsertedFallback}, " +
+                $"duplicatesSkipped={summary.SelectedCandidates - summary.InsertedTotal}");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error recording OBU-RSU correlations: {ex.Message}");
             throw;
         }
+    }
+
+    private sealed class CorrelationSummaryRow
+    {
+        public int TotalSrems { get; init; }
+        public int SelectedCandidates { get; init; }
+        public int InsertedTotal { get; init; }
+        public int InsertedStrict { get; init; }
+        public int InsertedFallback { get; init; }
     }
 
     private static async Task<bool> CorrelationExistsAsync(IDbConnection connection, int sremId, int ssemId)
