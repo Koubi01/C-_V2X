@@ -114,6 +114,20 @@ public class TsharkParser
                     packet.Timestamp = DateTime.UtcNow;
                 }
 
+                if (layers.TryGetProperty("eth", out var ethLayer))
+                {
+                    if (ethLayer.TryGetProperty("eth.dst", out var destinationMac))
+                    {
+                        packet.DestinationMac = GetStringValue(destinationMac);
+                    }
+
+                    if (ethLayer.TryGetProperty("eth.src", out var sourceMac))
+                    {
+                        packet.SourceMac = GetStringValue(sourceMac);
+                    }
+                    
+                }
+
                 // Parse MAC addresses from wlan layer
                 if (layers.TryGetProperty("wlan", out var wlanLayer))
                 {
