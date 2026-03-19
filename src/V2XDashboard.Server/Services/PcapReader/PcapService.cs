@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
+using System.Diagnostics;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.TsharkWrapper;
 using V2XDashboard.Shared;
@@ -54,6 +55,7 @@ public class PcapService : IPcapService
     {
         try
         {
+            var totalStopwatch = Stopwatch.StartNew();
             var filePath = Path.Combine(_pcapDataPath, fileName);
 
             // Check if file exists (in container environment)
@@ -63,16 +65,40 @@ public class PcapService : IPcapService
             }
 
             // Extract packets using TsharkWrapper
+            var parseStopwatch = Stopwatch.StartNew();
             var packets = await _tsharkWrapper.ExtractPacketsAsync(filePath);
+            parseStopwatch.Stop();
+
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
 
             // Store packets in database
-            await StorePacketsAsync(packets);
+            var storePacketsStopwatch = Stopwatch.StartNew();
+            await StorePacketsAsync(connection, transaction, packets);
+            storePacketsStopwatch.Stop();
 
             // Process V2X messages from packets
-            await ProcessV2XMessagesAsync(packets);
+            var processMessagesStopwatch = Stopwatch.StartNew();
+            await ProcessV2XMessagesAsync(connection, transaction, packets);
+            processMessagesStopwatch.Stop();
+
+            await transaction.CommitAsync();
 
             // Run a second pass after the entire file is stored to maximize intersection enrichment.
+            var enrichmentStopwatch = Stopwatch.StartNew();
             await PopulateIntersectionMetadataForFileAsync(fileName);
+            enrichmentStopwatch.Stop();
+
+            totalStopwatch.Stop();
+
+            Console.WriteLine(
+                $"ProcessPcapFileAsync timings for '{fileName}': " +
+                $"parse={parseStopwatch.ElapsedMilliseconds}ms, " +
+                $"storePackets={storePacketsStopwatch.ElapsedMilliseconds}ms, " +
+                $"processV2X={processMessagesStopwatch.ElapsedMilliseconds}ms, " +
+                $"enrichment={enrichmentStopwatch.ElapsedMilliseconds}ms, " +
+                $"total={totalStopwatch.ElapsedMilliseconds}ms, packets={packets.Count}");
 
             return true;
         }
@@ -420,26 +446,57 @@ public class PcapService : IPcapService
             "SELECT * FROM v2x_messages WHERE id = @Id", new { Id = id });
     }
 
-    private async Task StorePacketsAsync(List<Packet> packets)
+    private async Task StorePacketsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets)
     {
-        using var connection = new NpgsqlConnection(_connectionString);
-
-        var query = @"
-            INSERT INTO packets (timestamp, source_mac, destination_mac, packet_type, length,
-                               source_port, destination_port,
-                               payload, pcap_file_name)
-            VALUES (@Timestamp, @SourceMac, @DestinationMac, @PacketType, @Length,
-                    @SourcePort, @DestinationPort,
-                   @Payload, @PcapFileName)
-            RETURNING id";
-
-        foreach (var packet in packets)
+        if (packets.Count == 0)
         {
-            packet.Id = await connection.ExecuteScalarAsync<int>(query, packet);
+            return;
+        }
+
+        const int batchSize = 1000;
+        for (var start = 0; start < packets.Count; start += batchSize)
+        {
+            var chunk = packets.Skip(start).Take(batchSize).ToList();
+            var sql = new System.Text.StringBuilder();
+            sql.AppendLine("INSERT INTO packets (timestamp, source_mac, destination_mac, packet_type, length, source_port, destination_port, payload, pcap_file_name)");
+            sql.AppendLine("VALUES");
+
+            var parameters = new DynamicParameters();
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var packet = chunk[i];
+                var suffix = $"_{i}";
+
+                if (i > 0)
+                {
+                    sql.AppendLine(",");
+                }
+
+                sql.Append($"(@Timestamp{suffix}, @SourceMac{suffix}, @DestinationMac{suffix}, @PacketType{suffix}, @Length{suffix}, @SourcePort{suffix}, @DestinationPort{suffix}, @Payload{suffix}, @PcapFileName{suffix})");
+
+                parameters.Add($"@Timestamp{suffix}", packet.Timestamp);
+                parameters.Add($"@SourceMac{suffix}", packet.SourceMac);
+                parameters.Add($"@DestinationMac{suffix}", packet.DestinationMac);
+                parameters.Add($"@PacketType{suffix}", packet.PacketType);
+                parameters.Add($"@Length{suffix}", packet.Length);
+                parameters.Add($"@SourcePort{suffix}", packet.SourcePort);
+                parameters.Add($"@DestinationPort{suffix}", packet.DestinationPort);
+                parameters.Add($"@Payload{suffix}", packet.Payload);
+                parameters.Add($"@PcapFileName{suffix}", packet.PcapFileName);
+            }
+
+            sql.AppendLine();
+            sql.AppendLine("RETURNING id");
+
+            var returnedIds = (await connection.QueryAsync<int>(sql.ToString(), parameters, transaction)).ToList();
+            for (var i = 0; i < chunk.Count && i < returnedIds.Count; i++)
+            {
+                chunk[i].Id = returnedIds[i];
+            }
         }
     }
 
-    private async Task ProcessV2XMessagesAsync(List<Packet> packets)
+    private async Task ProcessV2XMessagesAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets)
     {
         var v2xPackets = packets.Where(p =>
             p.PacketType == "CAM" ||
@@ -453,38 +510,36 @@ public class PcapService : IPcapService
         {
             // This is a simplified implementation
             // Real V2X message parsing would require decoding the actual protocol data
-            await StoreV2XMessageFromPacketAsync(packet);
+            await StoreV2XMessageFromPacketAsync(connection, transaction, packet);
         }
     }
 
-    private async Task StoreV2XMessageFromPacketAsync(Packet packet)
+    private async Task StoreV2XMessageFromPacketAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
-        using var connection = new NpgsqlConnection(_connectionString);
-
         switch (packet.PacketType)
         {
             case "CAM":
-                await StoreCAMAsync(connection, packet);
+                await StoreCAMAsync(connection, transaction, packet);
                 break;
             case "DENM":
-                await StoreDENMAsync(connection, packet);
+                await StoreDENMAsync(connection, transaction, packet);
                 break;
             case "MAPEM":
-                await StoreMAPEMAsync(connection, packet);
+                await StoreMAPEMAsync(connection, transaction, packet);
                 break;
             case "SPATEM":
-                await StoreSPATEMAsync(connection, packet);
+                await StoreSPATEMAsync(connection, transaction, packet);
                 break;
             case "SREM":
-                await StoreSREMAsync(connection, packet);
+                await StoreSREMAsync(connection, transaction, packet);
                 break;
             case "SSEM":
-                await StoreSSEMAsync(connection, packet);
+                await StoreSSEMAsync(connection, transaction, packet);
                 break;
         }
     }
 
-    private async Task StoreCAMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreCAMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeCAM(packet);
 
@@ -520,10 +575,10 @@ public class PcapService : IPcapService
             decoded.VehicleWidth
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
-    private async Task StoreDENMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreDENMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeDENM(packet);
 
@@ -555,10 +610,10 @@ public class PcapService : IPcapService
             decoded.OriginalStationType
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
-    private async Task StoreMAPEMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreMAPEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeMAPEM(packet);
 
@@ -586,10 +641,10 @@ public class PcapService : IPcapService
             decoded.PublisherId
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
-    private async Task StoreSPATEMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreSPATEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeSPATEM(packet);
 
@@ -662,10 +717,10 @@ public class PcapService : IPcapService
             decoded.PublisherId
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
-    private async Task StoreSREMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreSREMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeSREM(packet);
 
@@ -708,10 +763,10 @@ public class PcapService : IPcapService
             decoded.RequestorName
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
-    private async Task StoreSSEMAsync(IDbConnection connection, Packet packet)
+    private async Task StoreSSEMAsync(IDbConnection connection, IDbTransaction transaction, Packet packet)
     {
         var decoded = _v2xMessageDecoder.DecodeSSEM(packet);
 
@@ -739,7 +794,7 @@ public class PcapService : IPcapService
             decoded.ResponderId
         };
 
-        await connection.ExecuteAsync(query, parameters);
+        await connection.ExecuteAsync(query, parameters, transaction);
     }
 
     private async Task PopulateIntersectionMetadataForFileAsync(string fileName)
