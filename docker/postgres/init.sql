@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS srem_messages (
     transmission_power DOUBLE PRECISION,
     route_names TEXT, 
     transit_schedule TEXT,
+    requestor_name VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

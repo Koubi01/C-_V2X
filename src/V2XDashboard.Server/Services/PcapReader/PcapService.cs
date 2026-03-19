@@ -71,6 +71,9 @@ public class PcapService : IPcapService
             // Process V2X messages from packets
             await ProcessV2XMessagesAsync(packets);
 
+            // Run a second pass after the entire file is stored to maximize intersection enrichment.
+            await PopulateIntersectionMetadataForFileAsync(fileName);
+
             return true;
         }
         catch (Exception ex)
@@ -423,10 +426,10 @@ public class PcapService : IPcapService
 
         var query = @"
             INSERT INTO packets (timestamp, source_mac, destination_mac, packet_type, length,
-                               protocol, source_ip, destination_ip, source_port, destination_port,
+                               source_port, destination_port,
                                payload, pcap_file_name)
             VALUES (@Timestamp, @SourceMac, @DestinationMac, @PacketType, @Length,
-                   @Protocol, @SourceIp, @DestinationIp, @SourcePort, @DestinationPort,
+                    @SourcePort, @DestinationPort,
                    @Payload, @PcapFileName)
             RETURNING id";
 
@@ -672,13 +675,13 @@ public class PcapService : IPcapService
                 requested_phase, vehicle_type, request_reason,
                 request_id, requestor_id, required_accuracy,
                 in_bound_lane_id, out_bound_lane_id, heading, speed, transmission_power,
-                route_names, transit_schedule)
+                route_names, transit_schedule, requestor_name)
             VALUES (@PacketId, @GenerationTime, @StationId,
                 @IntersectionName, @IntersectionId, @Latitude, @Longitude,
                 @RequestedPhase, @VehicleType, @RequestReason,
                 @RequestId, @RequestorId, @RequiredAccuracy,
                 @InBoundLaneId, @OutBoundLaneId, @Heading, @Speed, @TransmissionPower,
-                @RouteNames, @TransitSchedule)";
+                @RouteNames, @TransitSchedule, @RequestorName)";
 
         var parameters = new
         {
@@ -700,8 +703,9 @@ public class PcapService : IPcapService
             decoded.Heading,
             decoded.Speed,
             decoded.TransmissionPower,
-            RouteNames = decoded.routeNames,
-            TransitSchedule = decoded.transitSchedule
+            decoded.routeNames,
+            decoded.transitSchedule,
+            decoded.RequestorName
         };
 
         await connection.ExecuteAsync(query, parameters);
@@ -736,6 +740,104 @@ public class PcapService : IPcapService
         };
 
         await connection.ExecuteAsync(query, parameters);
+    }
+
+    private async Task PopulateIntersectionMetadataForFileAsync(string fileName)
+    {
+        using var connection = new NpgsqlConnection(_connectionString);
+
+        await UpdateSpatemIntersectionForFileAsync(connection, fileName);
+        await UpdateSremIntersectionForFileAsync(connection, fileName);
+        await UpdateSsemIntersectionForFileAsync(connection, fileName);
+    }
+
+    private static Task UpdateSpatemIntersectionForFileAsync(IDbConnection connection, string fileName)
+    {
+        const string query = @"
+            UPDATE spatem_messages s
+            SET intersection_name = COALESCE((
+                    SELECT m.intersection_name
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = s.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
+                    LIMIT 1
+                ), s.intersection_name),
+                latitude = COALESCE((
+                    SELECT m.latitude
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = s.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
+                    LIMIT 1
+                ), s.latitude),
+                longitude = COALESCE((
+                    SELECT m.longitude
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = s.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
+                    LIMIT 1
+                ), s.longitude)
+            FROM packets p
+            WHERE s.packet_id = p.id
+              AND p.pcap_file_name = @FileName";
+
+        return connection.ExecuteAsync(query, new { FileName = fileName });
+    }
+
+    private static Task UpdateSremIntersectionForFileAsync(IDbConnection connection, string fileName)
+    {
+        const string query = @"
+            UPDATE srem_messages s
+            SET intersection_name = COALESCE((
+                    SELECT ss.intersection_name
+                    FROM ssem_messages ss
+                    WHERE ss.request_station_id_ref = s.requestor_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time))) ASC
+                    LIMIT 1
+                ), s.intersection_name),
+                intersection_id = COALESCE((
+                    SELECT ss.intersection_id
+                    FROM ssem_messages ss
+                    WHERE ss.request_station_id_ref = s.requestor_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time))) ASC
+                    LIMIT 1
+                ), s.intersection_id)
+            FROM packets p
+            WHERE s.packet_id = p.id
+              AND p.pcap_file_name = @FileName";
+
+        return connection.ExecuteAsync(query, new { FileName = fileName });
+    }
+
+    private static Task UpdateSsemIntersectionForFileAsync(IDbConnection connection, string fileName)
+    {
+        const string query = @"
+            UPDATE ssem_messages ss
+            SET intersection_name = COALESCE((
+                    SELECT m.intersection_name
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = ss.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
+                    LIMIT 1
+                ), ss.intersection_name),
+                latitude = COALESCE((
+                    SELECT m.latitude
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = ss.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
+                    LIMIT 1
+                ), ss.latitude),
+                longitude = COALESCE((
+                    SELECT m.longitude
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = ss.intersection_id
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
+                    LIMIT 1
+                ), ss.longitude)
+            FROM packets p
+            WHERE ss.packet_id = p.id
+              AND p.pcap_file_name = @FileName";
+
+        return connection.ExecuteAsync(query, new { FileName = fileName });
     }
 
     /// <summary>

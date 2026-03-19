@@ -152,6 +152,7 @@ public class SREM : V2XMessage
     public int TransmissionPower { get; set; }
     public string routeNames { get; set; } = string.Empty; // Optional: list of route names for visualization
     public string transitSchedule { get; set; } = string.Empty; // Optional: transit schedule info for visualization
+    public string RequestorName { get; set; } = string.Empty; // Optional: human-readable name for requestor (e.g. bus route name)
 }
 
 // SSEM - Signal Status Extension Message (Confirmation/status response)

@@ -26,7 +26,7 @@ public class V2XMessageDecoder : IV2XMessageDecoder
         var latitude = ScaleCoordinate(rawLatitude);
         var longitude = ScaleCoordinate(rawLongitude);
         var altitude = ScaleAltitude(rawAltitude);
-        var speed = ScaleSpeed(rawSpeed);
+        var speed = mapemSpeedScaler(rawSpeed);
         var heading = ScaleHeading(rawHeading);
         var acceleration = ScaleAcceleration(rawAcceleration);
         var curvature = ScaleCurvature(rawCurvature);
@@ -37,7 +37,7 @@ public class V2XMessageDecoder : IV2XMessageDecoder
         var stationType = GetInt(payloadJson, "stationType", fallback: 0);
         var vehicleRole = GetString(payloadJson, "vehicleRole", fallback: "unknown");
         var decodeStatus = DetermineCamDecodeStatus(latitude, longitude, speed, heading, stationType);
-        var vehicleLength = GetDouble(payloadJson, "vehicleLength");
+        var vehicleLength = DmtoM(GetDouble(payloadJson, "vehicleLength"));
 
         return new CAM
         {
@@ -57,7 +57,8 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             LateralAcceleration = lateralAcceleration,
             VerticalAcceleration = verticalAcceleration,
             DecodeStatus = decodeStatus,
-            VehicleLength = vehicleLength
+            VehicleLength = vehicleLength,
+            VehicleWidth = DmtoM(GetDouble(payloadJson, "vehicleWidth"))
         };
     }
 
@@ -86,9 +87,9 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             Altitude = altitude,
             RelevanceTrafficDirection = GetInt(payloadJson, "relevanceTrafficDirection", fallback: 0),
             ValidityDuration = GetBool(payloadJson, "validityDuration", fallback: true),
-            StationType = GetInt(payloadJson, "denmStationType", fallback: 0),
+            StationType = GetInt(payloadJson, "relevanceStationType", fallback: 0),
             AwarenessTrafficDirection = GetInt(payloadJson, "awarenessTrafficDirection", fallback: 0),
-            OriginalStationType = GetInt(payloadJson, "originalStationType", fallback: 0)
+            OriginalStationType = GetInt(payloadJson, "denmOriginalStationId", fallback: 0)
         };
     }
 
@@ -112,8 +113,8 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             Latitude = latitude,
             Longitude = longitude,
             LaneCount = GetInt(payloadJson, "laneCount"),
-            RoadWidth = GetDouble(payloadJson, "roadWidth"),
-            SpeedLimit = GetString(payloadJson, "speedLimit"),
+            RoadWidth = CmtoM(GetDouble(payloadJson, "roadWidth")),
+            SpeedLimit = mapemSpeedScaler(Double.Parse(GetString(payloadJson, "speedLimit"))).ToString(CultureInfo.InvariantCulture),
             MapVersion = GetString(payloadJson, "mapVersion", fallback: "1.0"),
             PublisherId = GetString(payloadJson, "publisherId") // RSU that published this map
         };
@@ -194,13 +195,14 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             RequestId = GetString(payloadJson, "requestId"),
             RequestorId = GetString(payloadJson, "requestorId"),
             RequiredAccuracy = GetString(payloadJson, "requiredAccuracy"),
-            InBoundLaneId = GetInt(payloadJson, "inBoundLaneId"),
-            OutBoundLaneId = GetInt(payloadJson, "outBoundLaneId"),
-            Heading = GetDouble(payloadJson, "heading"),
-            Speed = GetDouble(payloadJson, "speed"),
+            InBoundLaneId = GetInt(payloadJson, "inBoundLane"),
+            OutBoundLaneId = GetInt(payloadJson, "outBoundLane"),
+            Heading = ScaleHeading(GetDouble(payloadJson, "heading")),
+            Speed = mapemSpeedScaler(GetDouble(payloadJson, "tasSpeed")),
             TransmissionPower = GetInt(payloadJson, "transmissionPower"),
             routeNames = GetString(payloadJson, "routeNames"),
-            transitSchedule = GetString(payloadJson, "transitSchedule")
+            transitSchedule = GetString(payloadJson, "transitSchedule"),
+            RequestorName = GetString(payloadJson, "requestorName")
         };
     }
 
@@ -244,12 +246,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
         if (!string.IsNullOrWhiteSpace(packet.SourceMac))
         {
             return packet.SourceMac;
-        }
-
-        // Fallback 3: Use source IP address
-        if (!string.IsNullOrWhiteSpace(packet.SourceIp))
-        {
-            return packet.SourceIp;
         }
 
         return "unknown";
@@ -508,18 +504,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
         return value;
     }
-
-    private static double ScaleSpeed(double value)
-    {
-        // CAM speedValue is typically 0.01 m/s.
-        if (Math.Abs(value) > 200d)
-        {
-            return value / 100d;
-        }
-
-        return value;
-    }
-
     private static double ScaleHeading(double value)
     {
         // CAM headingValue is typically 0.1 degrees.
@@ -665,4 +649,25 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
         return false;
     }
+    private static double CmtoM(double value)
+    {
+        return value / 100d;
+    }
+
+    private static double DmtoM(double value)
+    {
+        return value / 10d;
+    }
+
+    private static double mapemSpeedScaler(double speed)
+    {
+        if (speed > 0) 
+        {
+            double scaler = 3.6*3.6;
+            return Math.Floor(speed / scaler); // Assume km/h and convert to m/s
+        }
+
+        return speed;
+    }
+
 }

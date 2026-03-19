@@ -47,9 +47,8 @@
                 <RowTemplate>
                     <MudTd DataLabel="Timestamp">@context.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
                     <MudTd DataLabel="Packet Type">@context.PacketType</MudTd>
-                    <MudTd DataLabel="Protocol">@context.Protocol</MudTd>
-                    <MudTd DataLabel="Source">@FormatEndpoint(context.SourceIp, context.SourcePort, context.SourceMac)</MudTd>
-                    <MudTd DataLabel="Destination">@FormatEndpoint(context.DestinationIp, context.DestinationPort, context.DestinationMac)</MudTd>
+                    <MudTd DataLabel="Source">@FormatEndpoint( context.SourcePort, context.SourceMac)</MudTd>
+                    <MudTd DataLabel="Destination">@FormatEndpoint( context.DestinationPort, context.DestinationMac)</MudTd>
                     <MudTd DataLabel="Length">@context.Length B</MudTd>
                     <MudTd DataLabel="PCAP">@context.PcapFileName</MudTd>
                 </RowTemplate>
@@ -141,18 +140,8 @@
         }
     }
 
-    private static string FormatEndpoint(string ipAddress, int port, string macAddress)
+    private static string FormatEndpoint(int port, string macAddress)
     {
-        if (!string.IsNullOrWhiteSpace(ipAddress) && port > 0)
-        {
-            return $"{ipAddress}:{port}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(ipAddress))
-        {
-            return ipAddress;
-        }
-
-        return string.IsNullOrWhiteSpace(macAddress) ? "n/a" : macAddress;
+          return string.IsNullOrWhiteSpace(macAddress) ? "n/a" : macAddress;
     }
 }
