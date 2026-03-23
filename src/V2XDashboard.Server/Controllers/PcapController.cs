@@ -361,6 +361,37 @@ public class PcapController : ControllerBase
         }
     }
 
+    [HttpGet("map-entities/paged")]
+    public async Task<IActionResult> GetMapEntitiesPaged(
+        [FromQuery] DateTime? fromTime = null,
+        [FromQuery] DateTime? toTime = null,
+        [FromQuery] List<string>? entityTypes = null,
+        [FromQuery] List<string>? messageTypes = null,
+        [FromQuery] List<string>? vehicleCategories = null,
+        [FromQuery] List<int>? stationTypes = null,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 100)
+    {
+        try
+        {
+            var result = await _pcapService.GetMapEntitiesPagedAsync(
+                fromTime,
+                toTime,
+                entityTypes,
+                messageTypes,
+                vehicleCategories,
+                stationTypes,
+                pageNumber,
+                pageSize);
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error retrieving paged map entities: {ex.Message}");
+        }
+    }
+
     [HttpPost("correlations/record")]
     public async Task<IActionResult> RecordCorrelations()
     {

@@ -1,5 +1,53 @@
 # V2X PCAP Dashboard Implementation Status
 
+## 🧭 Map Frontend Redo Stages (MudBlazor-Only)
+
+### Stage 1: Filter Surface and UX Baseline
+- [x] Map filter card rebuilt using MudBlazor components only.
+- [x] Added check buttons for OBU, RSU, and correlation visibility.
+- [x] Added per-message check buttons (CAM, DENM, MAPEM, SPATEM, SREM, SSEM).
+- [x] Added secure message check buttons (future-ready; DB fields not present yet).
+- [x] Added vehicle category selector derived from current map entity data.
+
+### Stage 2: Virtualized Data Grids
+- [x] Replaced correlation table with MudDataGrid.
+- [x] Enabled virtualization for correlation grid.
+- [x] Added virtualized MudDataGrid for visible map entities.
+- [x] Removed manual pager UI for correlation list in favor of virtualization.
+
+### Stage 3: Query and Filter Hardening (Next)
+- [x] Move more filters to server-side query parameters to reduce payload size.
+- [ ] Add DB-backed secure message columns/flags and wire secure filters.
+- [ ] Add correlation subtype groupings and confidence thresholds in UI.
+- [ ] Add message-specific quick presets for traffic engineering workflows.
+- [x] Add paged `map-entities` endpoint and connect map grids to paged API queries.
+
+#### Agreed Considerations
+- Secure toggles default to ON once DB fields exist.
+- Vehicle categories continue using current role/station-type mapping.
+- Correlation filtering remains strict/fallback only (no confidence slider yet).
+- Next performance stage should move grids toward server-side virtualization/paging.
+
+### Stage 4: Validation and Performance (Next)
+- [x] Validate behavior against running Docker DB with larger captures.
+- [ ] Add component-level tests for filter combinations.
+- [x] Add API integration checks for map entities and correlations endpoints.
+- [x] Benchmark map+grid interaction latency under high-volume datasets.
+
+#### Stage 4 Execution Notes
+- Added `scripts/stage4-validation.ps1` for repeatable API validation + latency benchmark.
+- Added `scripts/README.md` with usage and expected checks.
+- Latest run against local API (`http://localhost:5007`) connected to Docker PostgreSQL:
+  - CAM total: 215
+  - CAM station type 6: 132
+  - Correlations total: 1285
+  - Correlations strict: 0
+  - Avg latency (12 iterations):
+    - `map-entities/paged` CAM: 152.61 ms
+    - `map-entities/paged` CAM + stationTypes=6: 146.93 ms
+    - `correlations/paged` all: 4.41 ms
+    - `correlations/paged` strict: 2.79 ms
+
 ## ✅ **COMPLETED: All V2X Message Types Implemented**
 
 ### **1. Complete V2X Message Models** ✅

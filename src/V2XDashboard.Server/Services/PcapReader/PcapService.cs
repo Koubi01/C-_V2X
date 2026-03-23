@@ -15,6 +15,40 @@ namespace V2XDashboard.Server.Services.PcapReader;
 
 public class PcapService : IPcapService
 {
+    private static readonly Dictionary<int, string> StationTypeNames = new()
+    {
+        [0] = "Unknown",
+        [1] = "Pedestrian",
+        [2] = "Cyclist",
+        [3] = "Moped",
+        [4] = "Motorcycle",
+        [5] = "Passenger Car",
+        [6] = "Bus",
+        [7] = "Light Truck",
+        [8] = "Heavy Truck",
+        [9] = "Trailer",
+        [10] = "Special Vehicle",
+        [11] = "Tram",
+        [15] = "RSU"
+    };
+
+    private static readonly Dictionary<int, string> VehicleRoleNames = new()
+    {
+        [0] = "0",
+        [1] = "Public Transport",
+        [2] = "Special Transport",
+        [3] = "Dangerous Goods",
+        [4] = "Road Work",
+        [5] = "Rescue",
+        [6] = "Emergency",
+        [7] = "Safety Car",
+        [8] = "Agriculture",
+        [9] = "Commercial",
+        [10] = "Military",
+        [11] = "Road Operator",
+        [12] = "Taxi"
+    };
+
     private readonly string _connectionString;
     private readonly string _pcapDataPath;
     private readonly TsharkParser _tsharkWrapper;
@@ -1717,5 +1751,98 @@ public class PcapService : IPcapService
         entities.AddRange(ssemEntities);
 
         return entities;
+    }
+
+    public async Task<PagedResult<MapEntityDto>> GetMapEntitiesPagedAsync(
+        DateTime? fromTime = null,
+        DateTime? toTime = null,
+        IEnumerable<string>? entityTypes = null,
+        IEnumerable<string>? messageTypes = null,
+        IEnumerable<string>? vehicleCategories = null,
+        IEnumerable<int>? stationTypes = null,
+        int pageNumber = 1,
+        int pageSize = 100)
+    {
+        var (safePageNumber, safePageSize, offset) = NormalizePaging(pageNumber, pageSize, 500);
+
+        var all = await GetMapEntitiesAsync(fromTime, toTime);
+
+        var normalizedEntityTypes = (entityTypes ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var normalizedMessageTypes = (messageTypes ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var normalizedVehicleCategories = (vehicleCategories ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var selectedStationTypes = (stationTypes ?? Array.Empty<int>())
+            .ToHashSet();
+
+        var filtered = all
+            .Where(entity => normalizedEntityTypes.Count == 0 || normalizedEntityTypes.Contains(entity.EntityType))
+            .Where(entity => normalizedMessageTypes.Count == 0 || normalizedMessageTypes.Contains(entity.MessageType))
+            .Where(entity => normalizedVehicleCategories.Count == 0 || normalizedVehicleCategories.Contains(GetVehicleCategory(entity)))
+            .Where(entity => selectedStationTypes.Count == 0 || !entity.StationType.HasValue || selectedStationTypes.Contains(entity.StationType.Value))
+            .OrderByDescending(entity => entity.GenerationTime)
+            .ToList();
+
+        var pagedItems = filtered
+            .Skip(offset)
+            .Take(safePageSize)
+            .ToList();
+
+        return new PagedResult<MapEntityDto>
+        {
+            Items = pagedItems,
+            TotalCount = filtered.Count,
+            PageNumber = safePageNumber,
+            PageSize = safePageSize
+        };
+    }
+
+    private static string GetVehicleCategory(MapEntityDto entity)
+    {
+        if (!string.IsNullOrWhiteSpace(entity.VehicleRole))
+        {
+            var normalizedRole = entity.VehicleRole.Trim().ToLowerInvariant();
+            if (int.TryParse(normalizedRole, out var roleCode))
+            {
+                if (VehicleRoleNames.TryGetValue(roleCode, out var roleName))
+                {
+                    return roleName;
+                }
+
+                return roleCode == 0
+                    ? "0"
+                    : $"Vehicle Role {roleCode}";
+            }
+
+            return normalizedRole switch
+            {
+                "publictransport" => "Public Transport",
+                "public_transport" => "Public Transport",
+                "emergency" => "Emergency",
+                "specialtransport" => "Special Transport",
+                "dangerousgoods" => "Dangerous Goods",
+                "roadwork" => "Road Work",
+                _ => char.ToUpperInvariant(normalizedRole[0]) + normalizedRole[1..]
+            };
+        }
+
+        if (!entity.StationType.HasValue)
+        {
+            return "Unknown";
+        }
+
+        return StationTypeNames.TryGetValue(entity.StationType.Value, out var stationName)
+            ? stationName
+            : "Unknown";
     }
 }

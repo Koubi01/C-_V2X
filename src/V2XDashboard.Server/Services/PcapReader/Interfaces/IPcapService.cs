@@ -44,6 +44,15 @@ public interface IPcapService
     Task<SremSsemMatchDto?> GetSsemForSremAsync(int sremId);
     
     Task<List<MapEntityDto>> GetMapEntitiesAsync(DateTime? fromTime = null, DateTime? toTime = null);
+    Task<PagedResult<MapEntityDto>> GetMapEntitiesPagedAsync(
+        DateTime? fromTime = null,
+        DateTime? toTime = null,
+        IEnumerable<string>? entityTypes = null,
+        IEnumerable<string>? messageTypes = null,
+        IEnumerable<string>? vehicleCategories = null,
+        IEnumerable<int>? stationTypes = null,
+        int pageNumber = 1,
+        int pageSize = 100);
     
     Task RecordOBUToRSUCorrelationAsync();
     Task<bool> ProcessAllPcapFilesAsync();

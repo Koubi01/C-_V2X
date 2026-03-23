@@ -49,17 +49,55 @@
                 <MudItem xs="12" md="6" lg="4">
                     <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadDataAsync" Disabled="@isLoading">Apply Filters</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ApplyClientFiltersAsync" Disabled="@isLoading">Refresh View</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
                     </MudStack>
                 </MudItem>
                 <MudItem xs="12">
-                    <MudStack Row="true" Spacing="2" Class="map-toggle-row">
-                        <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
-                        <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
-                        <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
-                        <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
-                        <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
-                        <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.subtitle2">Entity and Message Filters</MudText>
+                        <MudStack Row="true" Spacing="2" Class="map-toggle-row">
+                            <MudCheckBox @bind-Value="showObu" Label="OBU" Color="Color.Primary" />
+                            <MudCheckBox @bind-Value="showRsu" Label="RSU" Color="Color.Primary" />
+                            <MudCheckBox @bind-Value="showCorrelations" Label="Correlations" Color="Color.Success" />
+                            <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed (future)" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted (future)" Color="Color.Info" />
+                        </MudStack>
+                        <MudStack Row="true" Spacing="2" Class="map-toggle-row">
+                            <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
+                            <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
+                            <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
+                            <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
+                            <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
+                        </MudStack>
+                        <MudSelect T="string"
+                                   Label="Vehicle Category"
+                                   Variant="Variant.Outlined"
+                                   MultiSelection="true"
+                                   SelectedValues="selectedVehicleCategories"
+                                   SelectedValuesChanged="OnVehicleCategoriesChanged"
+                                   Disabled="@isLoading">
+                            @foreach (var category in availableVehicleCategories)
+                            {
+                                <MudSelectItem T="string" Value="@category">@category</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="int"
+                                   Label="Station Type"
+                                   Variant="Variant.Outlined"
+                                   MultiSelection="true"
+                                   SelectedValues="selectedStationTypes"
+                                   SelectedValuesChanged="OnStationTypesChanged"
+                                   Disabled="@isLoading">
+                            @foreach (var stationType in availableStationTypes)
+                            {
+                                <MudSelectItem T="int" Value="@stationType">@GetStationTypeLabel(stationType)</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudText Typo="Typo.caption" Class="drawer-caption">
+                            Secure message toggles are staged for future DB columns and are currently non-blocking view switches.
+                        </MudText>
                     </MudStack>
                 </MudItem>
             </MudGrid>
@@ -89,33 +127,75 @@
 
         <MudPaper Class="panel-card" Elevation="0">
             <MudStack Row="true" Justify="Justify.SpaceBetween">
-                <MudText Typo="Typo.h6">Latest Correlations</MudText>
-                <MudText Typo="Typo.caption">Paged from server using current filter set</MudText>
+                <MudText Typo="Typo.h6">Correlation Stream</MudText>
+                <MudText Typo="Typo.caption">Virtualized MudDataGrid backed by Docker DB query results</MudText>
             </MudStack>
-            <MudTable Items="recentCorrelations" Dense="true" Hover="true" Breakpoint="Breakpoint.Md" Class="mt-3">
-                <HeaderContent>
-                    <MudTh>Type</MudTh>
-                    <MudTh>Request</MudTh>
-                    <MudTh>OBU</MudTh>
-                    <MudTh>RSU</MudTh>
-                    <MudTh>Confidence</MudTh>
-                    <MudTh>Delta</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Type">@context.CorrelationType</MudTd>
-                    <MudTd DataLabel="Request">@context.RequestId</MudTd>
-                    <MudTd DataLabel="OBU">@context.ObuStationId</MudTd>
-                    <MudTd DataLabel="RSU">@context.RsuIntersectionId</MudTd>
-                    <MudTd DataLabel="Confidence">@context.MatchConfidence.ToString("0.00")</MudTd>
-                    <MudTd DataLabel="Delta">@(context.TimeDeltaMs.HasValue ? $"{context.TimeDeltaMs} ms" : "n/a")</MudTd>
-                </RowTemplate>
-            </MudTable>
-
+            <MudDataGrid T="CorrelationDto"
+                         Items="correlationGridItems"
+                         Dense="true"
+                         Hover="true"
+                         Striped="true"
+                         ReadOnly="true"
+                         Virtualize="true"
+                         Height="360px"
+                         Class="mt-3">
+                <Columns>
+                    <PropertyColumn Property="x => x.CorrelationType" Title="Type" />
+                    <PropertyColumn Property="x => x.RequestId" Title="Request" />
+                    <PropertyColumn Property="x => x.ObuStationId" Title="OBU" />
+                    <PropertyColumn Property="x => x.RsuIntersectionId" Title="RSU" />
+                    <TemplateColumn Title="Confidence">
+                        <CellTemplate>@context.Item.MatchConfidence.ToString("0.00")</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Delta">
+                        <CellTemplate>@(context.Item.TimeDeltaMs.HasValue ? $"{context.Item.TimeDeltaMs} ms" : "n/a")</CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </MudDataGrid>
             <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
-                <MudText Typo="Typo.body2">Page @correlationPageNumber of @CorrelationTotalPages (@correlationTotalCount correlations)</MudText>
+                <MudText Typo="Typo.body2">Page @correlationGridPageNumber of @CorrelationGridTotalPages (@correlationGridTotalCount rows)</MudText>
                 <MudStack Row="true" Spacing="1">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="PreviousCorrelationPageAsync" Disabled="@(isLoading || isCorrelationPageLoading || correlationPageNumber <= 1)">Previous</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="NextCorrelationPageAsync" Disabled="@(isLoading || isCorrelationPageLoading || correlationPageNumber >= CorrelationTotalPages)">Next</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || correlationGridPageNumber <= 1)" OnClick="PreviousCorrelationGridPageAsync">Previous</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || correlationGridPageNumber >= CorrelationGridTotalPages)" OnClick="NextCorrelationGridPageAsync">Next</MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="panel-card" Elevation="0">
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                <MudText Typo="Typo.h6">Map Entities</MudText>
+                <MudText Typo="Typo.caption">Virtualized MudDataGrid with OBU/RSU and message filters</MudText>
+            </MudStack>
+            <MudDataGrid T="MapEntityDto"
+                         Items="entityGridItems"
+                         Dense="true"
+                         Hover="true"
+                         Striped="true"
+                         ReadOnly="true"
+                         Virtualize="true"
+                         Height="360px"
+                         Class="mt-3">
+                <Columns>
+                    <PropertyColumn Property="x => x.EntityType" Title="Entity" />
+                    <PropertyColumn Property="x => x.MessageType" Title="Message" />
+                    <PropertyColumn Property="x => x.StationId" Title="Station" />
+                    <PropertyColumn Property="x => x.IntersectionId" Title="Intersection" />
+                    <TemplateColumn Title="Coordinates">
+                        <CellTemplate>@($"{context.Item.Latitude:0.000000}, {context.Item.Longitude:0.000000}")</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Category">
+                        <CellTemplate>@GetVehicleCategory(context.Item)</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Time (UTC)">
+                        <CellTemplate>@context.Item.GenerationTime.ToString("yyyy-MM-dd HH:mm:ss")</CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </MudDataGrid>
+            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
+                <MudText Typo="Typo.body2">Page @entityGridPageNumber of @EntityGridTotalPages (@entityGridTotalCount rows)</MudText>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || entityGridPageNumber <= 1)" OnClick="PreviousEntityGridPageAsync">Previous</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || entityGridPageNumber >= EntityGridTotalPages)" OnClick="NextEntityGridPageAsync">Next</MudButton>
                 </MudStack>
             </MudStack>
         </MudPaper>
@@ -126,12 +206,50 @@
     private const string CorrelationAll = "all";
     private const string CorrelationStrict = "strict";
     private const string CorrelationFallback = "fallback";
+    private static readonly Dictionary<int, string> StationTypeNames = new()
+    {
+        [0] = "Unknown",
+        [1] = "Pedestrian",
+        [2] = "Cyclist",
+        [3] = "Moped",
+        [4] = "Motorcycle",
+        [5] = "Passenger Car",
+        [6] = "Bus",
+        [7] = "Light Truck",
+        [8] = "Heavy Truck",
+        [9] = "Trailer",
+        [10] = "Special Vehicle",
+        [11] = "Tram",
+        [15] = "RSU"
+    };
+
+    private static readonly Dictionary<int, string> VehicleRoleNames = new()
+    {
+        [0] = "0",
+        [1] = "Public Transport",
+        [2] = "Special Transport",
+        [3] = "Dangerous Goods",
+        [4] = "Road Work",
+        [5] = "Rescue",
+        [6] = "Emergency",
+        [7] = "Safety Car",
+        [8] = "Agriculture",
+        [9] = "Commercial",
+        [10] = "Military",
+        [11] = "Road Operator",
+        [12] = "Taxi"
+    };
     private bool isInitialized;
     private DateTime? fromTimeValue;
     private DateTime? toTimeValue;
     private string? fromTimeText;
     private string? toTimeText;
     private string correlationType = CorrelationAll;
+    private bool showObu = true;
+    private bool showRsu = true;
+    private bool showCorrelations = true;
+    private bool showSecureSigned = true;
+    private bool showSecureEncrypted = true;
     private bool showCam = true;
     private bool showSrem = true;
     private bool showDenm = true;
@@ -139,16 +257,28 @@
     private bool showMapem = true;
     private bool showSpatem = true;
     private bool isLoading;
-    private bool isCorrelationPageLoading;
     private int entityCount;
     private int correlationCount;
-    private int correlationPageNumber = 1;
-    private const int CorrelationPageSize = 10;
-    private int correlationTotalCount;
+    private int entityGridPageNumber = 1;
+    private const int EntityGridPageSize = 100;
+    private int entityGridTotalCount;
+    private int correlationGridPageNumber = 1;
+    private const int CorrelationGridPageSize = 100;
+    private int correlationGridTotalCount;
     private DateTime? lastUpdatedUtc;
     private string? errorMessage;
-    private List<CorrelationDto> recentCorrelations = new();
-    private int CorrelationTotalPages => Math.Max(1, (int)Math.Ceiling(correlationTotalCount / (double)CorrelationPageSize));
+    private List<MapEntityDto> allEntities = new();
+    private List<MapEntityDto> mapVisibleEntities = new();
+    private List<MapEntityDto> entityGridItems = new();
+    private List<CorrelationDto> allCorrelations = new();
+    private List<CorrelationDto> mapVisibleCorrelations = new();
+    private List<CorrelationDto> correlationGridItems = new();
+    private List<string> availableVehicleCategories = new();
+    private HashSet<string> selectedVehicleCategories = new(StringComparer.OrdinalIgnoreCase);
+    private List<int> availableStationTypes = new();
+    private HashSet<int> selectedStationTypes = new();
+    private int EntityGridTotalPages => Math.Max(1, (int)Math.Ceiling(entityGridTotalCount / (double)EntityGridPageSize));
+    private int CorrelationGridTotalPages => Math.Max(1, (int)Math.Ceiling(correlationGridTotalCount / (double)CorrelationGridPageSize));
     private string lastUpdatedLabel => lastUpdatedUtc.HasValue
         ? lastUpdatedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
         : "never";
@@ -209,27 +339,13 @@
             var toTime = toTimeValue;
 
             var entitiesUrl = BuildMapEntitiesUrl(fromTime, toTime);
-            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType);
+            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType, 2000);
 
-            var entities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
-            var correlations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
-
-            var filteredEntities = entities
-                .Where(e =>
-                    (showCam && e.MessageType == "CAM") ||
-                    (showSrem && e.MessageType == "SREM") ||
-                    (showDenm && e.MessageType == "DENM") ||
-                    (showSsem && e.MessageType == "SSEM") ||
-                    (showMapem && e.MessageType == "MAPEM") ||
-                    (showSpatem && e.MessageType == "SPATEM"))
-                .ToList();
-
-            await JS.InvokeVoidAsync("v2xMap.setEntities", filteredEntities);
-            await JS.InvokeVoidAsync("v2xMap.setCorrelations", correlations);
-
-            entityCount = filteredEntities.Count;
-            correlationCount = correlations.Count;
-            await LoadCorrelationPageAsync(1);
+            allEntities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
+            allCorrelations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
+            RefreshVehicleCategories();
+            RefreshStationTypes();
+            await ApplyClientFiltersAsync();
             lastUpdatedUtc = DateTime.UtcNow;
         }
         catch (Exception ex)
@@ -243,45 +359,268 @@
         }
     }
 
-    private async Task PreviousCorrelationPageAsync()
+    private async Task ApplyClientFiltersAsync()
     {
-        if (correlationPageNumber > 1)
+        if (!isInitialized)
         {
-            await LoadCorrelationPageAsync(correlationPageNumber - 1);
+            return;
+        }
+
+        var filteredEntities = allEntities
+            .Where(e =>
+                (showObu && string.Equals(e.EntityType, "OBU", StringComparison.OrdinalIgnoreCase)) ||
+                (showRsu && string.Equals(e.EntityType, "RSU", StringComparison.OrdinalIgnoreCase)) ||
+                (showDenm && string.Equals(e.EntityType, "EVENT", StringComparison.OrdinalIgnoreCase)))
+            .Where(e =>
+                (showCam && e.MessageType == "CAM") ||
+                (showSrem && e.MessageType == "SREM") ||
+                (showDenm && e.MessageType == "DENM") ||
+                (showSsem && e.MessageType == "SSEM") ||
+                (showMapem && e.MessageType == "MAPEM") ||
+                (showSpatem && e.MessageType == "SPATEM"))
+            .Where(e => IsVehicleCategorySelected(e))
+                .Where(e => IsStationTypeSelected(e))
+            .ToList();
+
+        var filteredCorrelations = showCorrelations
+            ? allCorrelations.ToList()
+            : new List<CorrelationDto>();
+
+        // Placeholder stage: secure-message check buttons are wired in UI and intentionally non-restrictive
+        // until signed/encrypted flags are available in DB/API payloads.
+        _ = showSecureSigned;
+        _ = showSecureEncrypted;
+
+        mapVisibleEntities = filteredEntities;
+        mapVisibleCorrelations = filteredCorrelations;
+
+        await JS.InvokeVoidAsync("v2xMap.setEntities", mapVisibleEntities);
+        await JS.InvokeVoidAsync("v2xMap.setCorrelations", mapVisibleCorrelations);
+
+        entityCount = mapVisibleEntities.Count;
+        correlationCount = mapVisibleCorrelations.Count;
+
+        await LoadEntityGridPageAsync(1);
+        await LoadCorrelationGridPageAsync(1);
+    }
+
+    private async Task LoadEntityGridPageAsync(int pageNumber)
+    {
+        var url = BuildPagedMapEntitiesUrl(
+            fromTimeValue,
+            toTimeValue,
+            BuildSelectedEntityTypes(),
+            BuildSelectedMessageTypes(),
+            selectedVehicleCategories,
+            selectedStationTypes,
+            pageNumber,
+            EntityGridPageSize);
+
+        var pagedResult = await Http.GetFromJsonAsync<PagedResult<MapEntityDto>>(url) ?? new PagedResult<MapEntityDto>();
+
+        entityGridItems = pagedResult.Items.ToList();
+        entityGridPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
+        entityGridTotalCount = pagedResult.TotalCount;
+    }
+
+    private async Task LoadCorrelationGridPageAsync(int pageNumber)
+    {
+        if (!showCorrelations)
+        {
+            correlationGridItems = new List<CorrelationDto>();
+            correlationGridPageNumber = 1;
+            correlationGridTotalCount = 0;
+            return;
+        }
+
+        var url = BuildPagedCorrelationsUrl(fromTimeValue, toTimeValue, correlationType, pageNumber, CorrelationGridPageSize);
+        var pagedResult = await Http.GetFromJsonAsync<PagedResult<CorrelationDto>>(url) ?? new PagedResult<CorrelationDto>();
+
+        correlationGridItems = pagedResult.Items.ToList();
+        correlationGridPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
+        correlationGridTotalCount = pagedResult.TotalCount;
+    }
+
+    private Task PreviousEntityGridPageAsync() => entityGridPageNumber > 1
+        ? LoadEntityGridPageAsync(entityGridPageNumber - 1)
+        : Task.CompletedTask;
+
+    private Task NextEntityGridPageAsync() => entityGridPageNumber < EntityGridTotalPages
+        ? LoadEntityGridPageAsync(entityGridPageNumber + 1)
+        : Task.CompletedTask;
+
+    private Task PreviousCorrelationGridPageAsync() => correlationGridPageNumber > 1
+        ? LoadCorrelationGridPageAsync(correlationGridPageNumber - 1)
+        : Task.CompletedTask;
+
+    private Task NextCorrelationGridPageAsync() => correlationGridPageNumber < CorrelationGridTotalPages
+        ? LoadCorrelationGridPageAsync(correlationGridPageNumber + 1)
+        : Task.CompletedTask;
+
+    private void RefreshVehicleCategories()
+    {
+        var categories = allEntities
+            .Where(static entity => string.Equals(entity.EntityType, "OBU", StringComparison.OrdinalIgnoreCase))
+            .Select(GetVehicleCategory)
+            .Where(static category => !string.IsNullOrWhiteSpace(category))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static category => category)
+            .ToList();
+
+        availableVehicleCategories = categories;
+
+        if (selectedVehicleCategories.Count == 0)
+        {
+            selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        selectedVehicleCategories = selectedVehicleCategories
+            .Where(selected => categories.Contains(selected, StringComparer.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (selectedVehicleCategories.Count == 0)
+        {
+            selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
     }
 
-    private async Task NextCorrelationPageAsync()
+    private void RefreshStationTypes()
     {
-        if (correlationPageNumber < CorrelationTotalPages)
+        var stationTypes = allEntities
+            .Where(entity => entity.StationType.HasValue)
+            .Select(entity => entity.StationType!.Value)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToList();
+
+        availableStationTypes = stationTypes;
+
+        if (selectedStationTypes.Count == 0)
         {
-            await LoadCorrelationPageAsync(correlationPageNumber + 1);
+            selectedStationTypes = stationTypes.ToHashSet();
+            return;
+        }
+
+        selectedStationTypes = selectedStationTypes
+            .Where(selected => stationTypes.Contains(selected))
+            .ToHashSet();
+
+        if (selectedStationTypes.Count == 0)
+        {
+            selectedStationTypes = stationTypes.ToHashSet();
         }
     }
 
-    private async Task LoadCorrelationPageAsync(int pageNumber)
+    private Task OnVehicleCategoriesChanged(IEnumerable<string> categories)
     {
-        isCorrelationPageLoading = true;
+        selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return ApplyClientFiltersAsync();
+    }
 
-        try
-        {
-            var url = BuildPagedCorrelationsUrl(fromTimeValue, toTimeValue, correlationType, pageNumber, CorrelationPageSize);
-            var pagedResult = await Http.GetFromJsonAsync<PagedResult<CorrelationDto>>(url) ?? new PagedResult<CorrelationDto>();
+    private Task OnStationTypesChanged(IEnumerable<int> stationTypes)
+    {
+        selectedStationTypes = stationTypes.ToHashSet();
+        return ApplyClientFiltersAsync();
+    }
 
-            recentCorrelations = pagedResult.Items.ToList();
-            correlationPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
-            correlationTotalCount = pagedResult.TotalCount;
-            correlationCount = pagedResult.TotalCount;
-        }
-        catch (Exception ex)
+    private bool IsVehicleCategorySelected(MapEntityDto entity)
+    {
+        if (!string.Equals(entity.EntityType, "OBU", StringComparison.OrdinalIgnoreCase))
         {
-            errorMessage = $"Failed to load correlation table: {ex.Message}";
+            return true;
         }
-        finally
+
+        if (selectedVehicleCategories.Count == 0)
         {
-            isCorrelationPageLoading = false;
-            StateHasChanged();
+            return true;
         }
+
+        var category = GetVehicleCategory(entity);
+        return selectedVehicleCategories.Contains(category);
+    }
+
+    private bool IsStationTypeSelected(MapEntityDto entity)
+    {
+        if (selectedStationTypes.Count == 0)
+        {
+            return true;
+        }
+
+        if (!entity.StationType.HasValue)
+        {
+            return true;
+        }
+
+        return selectedStationTypes.Contains(entity.StationType.Value);
+    }
+
+    private static string GetVehicleCategory(MapEntityDto entity)
+    {
+        if (!string.IsNullOrWhiteSpace(entity.VehicleRole))
+        {
+            var normalizedRole = entity.VehicleRole.Trim();
+            if (int.TryParse(normalizedRole, out var roleCode))
+            {
+                if (VehicleRoleNames.TryGetValue(roleCode, out var roleName))
+                {
+                    return roleName;
+                }
+
+                return roleCode == 0
+                    ? "Unknown"
+                    : $"Vehicle Role {roleCode}";
+            }
+
+            var loweredRole = normalizedRole.ToLowerInvariant();
+            return loweredRole switch
+            {
+                "publictransport" => "Public Transport",
+                "public_transport" => "Public Transport",
+                "specialtransport" => "Special Transport",
+                "dangerousgoods" => "Dangerous Goods",
+                "roadwork" => "Road Work",
+                "passengercar" => "Passenger Car",
+                "lighttruck" => "Light Truck",
+                "heavytruck" => "Heavy Truck",
+                "roadsideunit" => "RSU",
+                "emergency" => "Emergency Vehicle",
+                _ => ToTitleWords(loweredRole)
+            };
+        }
+
+        return entity.StationType.HasValue
+            ? GetStationTypeName(entity.StationType.Value)
+            : "Unknown";
+    }
+
+    private static string GetStationTypeName(int stationTypeCode)
+        => StationTypeNames.TryGetValue(stationTypeCode, out var name)
+            ? name
+            : "Unknown";
+
+    private static string GetStationTypeLabel(int stationTypeCode)
+        => $"{stationTypeCode} - {GetStationTypeName(stationTypeCode)}";
+
+    private static string ToTitleWords(string rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return "Unknown";
+        }
+
+        var normalized = rawValue
+            .Replace('_', ' ')
+            .Replace('-', ' ');
+
+        var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < parts.Length; index++)
+        {
+            var part = parts[index];
+            parts[index] = char.ToUpperInvariant(part[0]) + part[1..];
+        }
+
+        return string.Join(' ', parts);
     }
 
     private async Task RecordCorrelationsAsync()
@@ -338,7 +677,7 @@
             : $"api/pcap/map-entities?{string.Join("&", queryParts)}";
     }
 
-    private static string BuildCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType)
+    private static string BuildCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType, int limit)
     {
         var queryParts = new List<string>();
 
@@ -357,7 +696,7 @@
             queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
         }
 
-        queryParts.Add("limit=1000");
+        queryParts.Add($"limit={limit}");
 
         return $"api/pcap/correlations?{string.Join("&", queryParts)}";
     }
@@ -386,6 +725,106 @@
         }
 
         return $"api/pcap/correlations/paged?{string.Join("&", queryParts)}";
+    }
+
+    private static string BuildPagedMapEntitiesUrl(
+        DateTime? fromTime,
+        DateTime? toTime,
+        IEnumerable<string> entityTypes,
+        IEnumerable<string> messageTypes,
+        IEnumerable<string> vehicleCategories,
+        IEnumerable<int> stationTypes,
+        int pageNumber,
+        int pageSize)
+    {
+        var queryParts = new List<string>
+        {
+            $"pageNumber={pageNumber}",
+            $"pageSize={pageSize}"
+        };
+
+        if (fromTime.HasValue)
+        {
+            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
+        }
+
+        if (toTime.HasValue)
+        {
+            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
+        }
+
+        foreach (var entityType in entityTypes)
+        {
+            queryParts.Add($"entityTypes={Uri.EscapeDataString(entityType)}");
+        }
+
+        foreach (var messageType in messageTypes)
+        {
+            queryParts.Add($"messageTypes={Uri.EscapeDataString(messageType)}");
+        }
+
+        foreach (var vehicleCategory in vehicleCategories)
+        {
+            queryParts.Add($"vehicleCategories={Uri.EscapeDataString(vehicleCategory)}");
+        }
+
+        foreach (var stationType in stationTypes)
+        {
+            queryParts.Add($"stationTypes={stationType}");
+        }
+
+        return $"api/pcap/map-entities/paged?{string.Join("&", queryParts)}";
+    }
+
+    private IEnumerable<string> BuildSelectedEntityTypes()
+    {
+        if (showObu)
+        {
+            yield return "OBU";
+        }
+
+        if (showRsu)
+        {
+            yield return "RSU";
+        }
+
+        if (showDenm)
+        {
+            yield return "EVENT";
+        }
+    }
+
+    private IEnumerable<string> BuildSelectedMessageTypes()
+    {
+        if (showCam)
+        {
+            yield return "CAM";
+        }
+
+        if (showSrem)
+        {
+            yield return "SREM";
+        }
+
+        if (showDenm)
+        {
+            yield return "DENM";
+        }
+
+        if (showSsem)
+        {
+            yield return "SSEM";
+        }
+
+        if (showMapem)
+        {
+            yield return "MAPEM";
+        }
+
+        if (showSpatem)
+        {
+            yield return "SPATEM";
+        }
     }
 
     private static DateTime? ParseLocalDateTime(string? value)
