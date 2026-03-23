@@ -282,16 +282,26 @@ CREATE INDEX IF NOT EXISTS idx_spatem_generation_station ON spatem_messages(gene
 CREATE INDEX IF NOT EXISTS idx_srem_request_id ON srem_messages(request_id);
 CREATE INDEX IF NOT EXISTS idx_srem_requestor_id ON srem_messages(requestor_id);
 CREATE INDEX IF NOT EXISTS idx_srem_generation_intersection ON srem_messages(generation_time, intersection_id);
+CREATE INDEX IF NOT EXISTS idx_srem_request_id_generation_time ON srem_messages(request_id, generation_time);
+CREATE INDEX IF NOT EXISTS idx_srem_intersection_id_generation_time ON srem_messages(intersection_id, generation_time);
+CREATE INDEX IF NOT EXISTS idx_srem_station_id_generation_time ON srem_messages(station_id, generation_time);
+CREATE INDEX IF NOT EXISTS idx_srem_intersection_name_lower ON srem_messages(LOWER(TRIM(intersection_name)));
 
 -- SSEM correlation indexes
 CREATE INDEX IF NOT EXISTS idx_ssem_request_id_ref ON ssem_messages(request_id_ref);
 CREATE INDEX IF NOT EXISTS idx_ssem_responder_id ON ssem_messages(responder_id);
 CREATE INDEX IF NOT EXISTS idx_ssem_generation_intersection ON ssem_messages(generation_time, intersection_id);
+CREATE INDEX IF NOT EXISTS idx_ssem_request_id_ref_generation_time ON ssem_messages(request_id_ref, generation_time);
+CREATE INDEX IF NOT EXISTS idx_ssem_intersection_id_generation_time ON ssem_messages(intersection_id, generation_time);
+CREATE INDEX IF NOT EXISTS idx_ssem_request_station_id_ref_generation_time ON ssem_messages(request_station_id_ref, generation_time);
+CREATE INDEX IF NOT EXISTS idx_ssem_intersection_name_lower ON ssem_messages(LOWER(TRIM(intersection_name)));
 
 -- Correlation table indexes
 CREATE INDEX IF NOT EXISTS idx_correlations_request_id ON obu_rsu_correlations(request_id);
 CREATE INDEX IF NOT EXISTS idx_correlations_srem_id ON obu_rsu_correlations(srem_id);
 CREATE INDEX IF NOT EXISTS idx_correlations_ssem_id ON obu_rsu_correlations(ssem_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_correlations_unique_srem_ssem ON obu_rsu_correlations(srem_id, ssem_id)
+    WHERE srem_id IS NOT NULL AND ssem_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_correlations_obu_rsu ON obu_rsu_correlations(obu_station_id, rsu_intersection_id);
 CREATE INDEX IF NOT EXISTS idx_correlations_timestamp ON obu_rsu_correlations(srem_timestamp, ssem_timestamp);
 CREATE INDEX IF NOT EXISTS idx_correlations_type ON obu_rsu_correlations(correlation_type);

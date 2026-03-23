@@ -22,6 +22,7 @@ public class TsharkParser
     public async Task<List<Packet>> ExtractPacketsAsync(string pcapFilePath, string filter = "")
     {
         var packets = new List<Packet>();
+        var parseStopwatch = Stopwatch.StartNew();
 
         var arguments = $"-r \"{pcapFilePath}\" -T json";
 
@@ -58,6 +59,11 @@ public class TsharkParser
             }
 
             packets = ParseTsharkJson(output, Path.GetFileName(pcapFilePath));
+            parseStopwatch.Stop();
+
+            Console.WriteLine(
+                $"Tshark extract summary for '{Path.GetFileName(pcapFilePath)}': " +
+                $"filter='{filter}', packets={packets.Count}, duration={parseStopwatch.ElapsedMilliseconds}ms");
         }
         catch (Exception ex)
         {
