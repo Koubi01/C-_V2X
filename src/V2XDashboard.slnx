@@ -2,4 +2,5 @@
   <Project Path="V2XDashboard.Shared\V2XDashboard.Shared.csproj" />
   <Project Path="V2XDashboard.Client\V2XDashboard.Client.csproj" />
   <Project Path="V2XDashboard.Server\V2XDashboard.Server.csproj" />
+  <Project Path="V2XDashboard.Server.Tests\V2XDashboard.Server.Tests.csproj" />
 </Solution>

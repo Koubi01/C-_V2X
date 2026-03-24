@@ -1,137 +1,197 @@
-# V2X PCAP Dashboard Implementation Status
+# V2X Dashboard Server Implementation Plan
 
-## 🧭 Map Frontend Redo Stages (MudBlazor-Only)
+## 1) Server Analysis Summary (Current State)
 
-### Stage 1: Filter Surface and UX Baseline
-- [x] Map filter card rebuilt using MudBlazor components only.
-- [x] Added check buttons for OBU, RSU, and correlation visibility.
-- [x] Added per-message check buttons (CAM, DENM, MAPEM, SPATEM, SREM, SSEM).
-- [x] Added secure message check buttons (future-ready; DB fields not present yet).
-- [x] Added vehicle category selector derived from current map entity data.
+### Strengths
+- Clear service and repository split is already in place.
+- Minimal API endpoint groups are available and map to focused services.
+- Core V2X message families are supported end to end: CAM, DENM, MAPEM, SPATEM, SREM, SSEM.
+- Correlation logic (SREM <-> SSEM) exists with strict and fallback matching.
+- Paging exists on key query endpoints.
 
-### Stage 2: Virtualized Data Grids
-- [x] Replaced correlation table with MudDataGrid.
-- [x] Enabled virtualization for correlation grid.
-- [x] Added virtualized MudDataGrid for visible map entities.
-- [x] Removed manual pager UI for correlation list in favor of virtualization.
+### Gaps Against Target Requirements
+- No true cyclic ingestion mode (scheduled background processing).
+- No cumulative safety controls (idempotent processing and duplicate prevention by file fingerprint).
+- Secure communication support is not implemented in parser/database/API; UI currently has placeholders only.
+- OBU/RSU and station capability classification is distributed across query logic and UI, not centralized as domain model.
+- Some read models are still weakly normalized for long-term analytics and extensibility.
 
-### Stage 3: Query and Filter Hardening (Next)
-- [x] Move more filters to server-side query parameters to reduce payload size.
-- [ ] Add DB-backed secure message columns/flags and wire secure filters.
-- [ ] Add correlation subtype groupings and confidence thresholds in UI.
-- [ ] Add message-specific quick presets for traffic engineering workflows.
-- [x] Add paged `map-entities` endpoint and connect map grids to paged API queries.
+### Architecture Risks
+- Ingestion orchestration still has too many responsibilities in one service.
+- Process-all endpoint is manually triggered only; no operations policy for periodic runs.
+- Potential operational ambiguity around reprocessing behavior and data retention.
 
-#### Agreed Considerations
-- Secure toggles default to ON once DB fields exist.
-- Vehicle categories continue using current role/station-type mapping.
-- Correlation filtering remains strict/fallback only (no confidence slider yet).
-- Next performance stage should move grids toward server-side virtualization/paging.
+## 2) Engineering Principles For Next Iteration
 
-### Stage 4: Validation and Performance (Next)
-- [x] Validate behavior against running Docker DB with larger captures.
-- [ ] Add component-level tests for filter combinations.
-- [x] Add API integration checks for map entities and correlations endpoints.
-- [x] Benchmark map+grid interaction latency under high-volume datasets.
+- Interface-first: define contracts before implementation.
+- Minimal API first for new server features.
+- Single responsibility: ingestion, parsing, classification, and analytics projections separated.
+- Idempotency by design for all ingestion commands.
+- Observable by default: structured logs, counters, and health checks.
+- Backward compatibility where possible for existing client routes.
 
-#### Stage 4 Execution Notes
-- Added `scripts/stage4-validation.ps1` for repeatable API validation + latency benchmark.
-- Added `scripts/README.md` with usage and expected checks.
-- Latest run against local API (`http://localhost:5007`) connected to Docker PostgreSQL:
-  - CAM total: 215
-  - CAM station type 6: 132
-  - Correlations total: 1285
-  - Correlations strict: 0
-  - Avg latency (12 iterations):
-    - `map-entities/paged` CAM: 152.61 ms
-    - `map-entities/paged` CAM + stationTypes=6: 146.93 ms
-    - `correlations/paged` all: 4.41 ms
-    - `correlations/paged` strict: 2.79 ms
+## 3) Target Capability Map
 
-## ✅ **COMPLETED: All V2X Message Types Implemented**
+### A. Ingestion Modes
+- Cumulative mode: append-only ingest with duplicate file detection.
+- Cyclic mode: scheduled processing loop with configurable interval and file selection policy.
 
-### **1. Complete V2X Message Models** ✅
-- **CAM** (Cooperative Awareness Message) - Vehicle position, speed, acceleration
-- **DENM** (Decentralized Environmental Notification Message) - Safety events
-- **MAPEM** (Map Message) - Road network information
-- **SPATEM** (Signal Phase and Timing Message) - Traffic light status
-- **SREM** (Signal Request Extension Message) - Vehicle priority requests
-- **SSEM** (Signal Status Extension Message) - Request confirmations
+### B. Classification and Profiling
+- Station profile projection:
+  - entity type (OBU / RSU / EVENT)
+  - station type
+  - vehicle role/category
+  - observed message families
+  - secure communication support flags
 
-### **2. Database Schema with Separate Tables** ✅
-- `cam_messages` - CAM message data
-- `denm_messages` - DENM message data
-- `mapem_messages` - MAPEM message data
-- `spatem_messages` - SPATEM message data
-- `srem_messages` - SREM message data
-- `ssem_messages` - SSEM message data
-- Proper indexes for performance on all tables
+### C. Security Visibility
+- Parse and persist security metadata when present:
+  - is secured
+  - signature present
+  - signature valid (if inferable)
+  - signer/certificate id (if available)
+  - encryption indication
 
-### **3. Enhanced Packet Type Detection** ✅
-- **UDP Port-based detection**:
-  - CAM: Port 4729
-  - DENM: Port 2001
-  - MAPEM: Port 4731
-  - SPATEM: Port 4732
-  - SREM: Port 4733
-  - SSEM: Port 4734
-- **802.11p MAC address detection** (fallback)
+### D. API and Query Layer
+- Stable, paged, filterable minimal APIs for:
+  - packets
+  - messages
+  - map entities
+  - correlations
+  - station profiles
+  - ingestion jobs and scheduler status
 
-### **4. Complete Service Layer** ✅
-- **PcapService** with methods for all message types
-- **Individual storage methods** for each message type
-- **Query methods** for retrieving specific message types
+## 4) Interface-First Design (Proposed Contracts)
 
-### **5. REST API Endpoints** ✅
-- `GET /api/pcap/cam` - Retrieve CAM messages
-- `GET /api/pcap/denm` - Retrieve DENM messages
-- `GET /api/pcap/mapem` - Retrieve MAPEM messages
-- `GET /api/pcap/spatem` - Retrieve SPATEM messages
-- `GET /api/pcap/srem` - Retrieve SREM messages
-- `GET /api/pcap/ssem` - Retrieve SSEM messages
-- All endpoints support optional `limit` parameter
+### Ingestion
+- IIngestionCoordinator
+  - ProcessFileAsync
+  - ProcessBatchAsync
+- IIngestionScheduler
+  - StartAsync
+  - StopAsync
+  - GetStatusAsync
+- IIngestionDeduplicationService
+  - IsAlreadyProcessedAsync
+  - MarkProcessedAsync
 
-## 🚀 **Ready for Testing & Frontend Development**
+### Parsing / Classification
+- ISecurityMetadataExtractor
+- IStationProfileProjector
+- IMessageCapabilityTracker
 
-### **Database Setup Required**
-Run the updated `init.sql` to create all message tables:
-```bash
-docker-compose up -d postgres
-# Tables will be created automatically via init.sql
-```
+### Persistence
+- IProcessedFileRepository
+- IStationProfileRepository
+- ISecurityObservationRepository
 
-### **API Testing**
-All endpoints are ready for testing:
-- Process PCAP files: `POST /api/pcap/process/{filename}`
-- Query messages: `GET /api/pcap/{messagetype}?limit=100`
+### Read Models
+- IStationProfileQueryService
+- IIngestionStatusQueryService
 
-### **Next Steps**
-1. **Test with real PCAP data** containing V2X messages
-2. **Implement frontend** Blazor components for message visualization
-3. **Add real protocol parsing** (currently using placeholder data)
-4. **Add filtering and search** capabilities
-5. **Implement data visualization** (maps, charts, timelines)
+## 5) Database Evolution Plan
 
-## 📊 **Current Capabilities**
-- ✅ Parse PCAP files with tshark
-- ✅ Detect all 6 V2X message types by UDP port
-- ✅ Store messages in dedicated database tables
-- ✅ Query messages by type with REST API
-- ✅ Proper data models with all V2X fields
-- ✅ Scalable architecture for future enhancements
+### Migration 1: Processed files (idempotency)
+- New table: processed_files
+  - file_name
+  - file_size
+  - file_hash
+  - first_seen_at
+  - processed_at
+  - status
+  - error
+- Unique key on file_hash (or file_name + file_size + last_write_time strategy).
 
-**The V2X message recognition and storage system is now fully implemented!** 🎯
-- Integration tests with actual PCAP files
-- Performance testing with large datasets
+### Migration 2: Packet/message security metadata
+- Add security columns to packets and/or per-message tables.
+- Add index support for secure filters.
 
-### Docker Integration
-- Ensure proper volume mounting for PCAP files
-- Test tshark execution in container environment
-- Database connectivity validation
+### Migration 3: Station profile projection
+- New table: station_profiles
+  - station_id
+  - entity_type
+  - station_type
+  - vehicle_category
+  - supports_secure_comm
+  - observed_message_types (normalized relation preferred)
+  - first_seen_at / last_seen_at
 
-## 🚀 Ready for Testing
+## 6) Minimal API Roadmap
 
-The backend API is now ready for testing. You can:
-1. Start the Docker containers: `docker-compose up`
-2. Run the application: `dotnet run` in the Server project
-3. Test API endpoints via Swagger UI or direct HTTP calls
+### New endpoint groups
+- /api/ingestion
+  - process file
+  - process all
+  - scheduler status
+  - scheduler control (start/stop)
+- /api/stations
+  - profiles
+  - profile details
+  - capabilities
+- /api/security
+  - secure message metrics
+  - secure stations summary
+
+### Existing endpoint compatibility
+- Keep current routes during transition.
+- Add deprecation markers and migration notes for consumers.
+
+## 7) Implementation Phases
+
+### Phase 1: Idempotent cumulative mode
+- Implement processed file repository and deduplication checks.
+- Integrate checks into ingestion flow.
+- Add integration tests for duplicate processing behavior.
+
+### Phase 2: Cyclic mode
+- Add background scheduler service with interval from configuration.
+- Add scheduler status and control APIs.
+- Add health checks and operational logging.
+
+### Phase 3: Security metadata support
+- Extend parser for security fields where available.
+- Persist metadata and expose query endpoints.
+- Surface secure metrics in dashboard data contracts.
+
+### Phase 4: Station profile domain
+- Build station profile projection pipeline.
+- Add station profile minimal APIs with paging/filtering.
+- Align map/entity filtering to profile-backed data.
+
+### Phase 5: Hardening and cleanup
+- Move residual mixed responsibilities out of orchestration service.
+- Add validation and consistent ProblemDetails responses.
+- Expand integration tests and add performance smoke tests.
+
+## 8) Testing Strategy
+
+- Integration tests for ingestion mode behavior:
+  - new file processed
+  - duplicate file skipped
+  - cyclic run processes only new arrivals
+- Contract tests for new minimal APIs.
+- Parser tests for security metadata extraction paths.
+- Repository tests for paging, filtering, and indices usage.
+
+## 9) Operational and Config Plan
+
+- Add config section: Ingestion
+  - Mode: Manual | Cumulative | Cyclic
+  - IntervalSeconds
+  - MaxFilesPerRun
+  - ReprocessPolicy
+- Add metrics/logging:
+  - files scanned
+  - files processed
+  - files skipped (duplicate)
+  - processing duration
+  - secure messages detected
+
+## 10) Acceptance Criteria
+
+- Cumulative mode is idempotent and safe to rerun.
+- Cyclic mode runs automatically with configurable interval.
+- Secure communication support is queryable via API and visible in summaries.
+- OBU/RSU and vehicle/station categorization is centralized and consistent.
+- New features delivered through focused interfaces and minimal APIs.
+- Existing API consumers remain functional during migration.

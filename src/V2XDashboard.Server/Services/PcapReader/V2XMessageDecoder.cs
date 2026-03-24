@@ -7,7 +7,14 @@ using V2XDashboard.Shared;
 
 namespace V2XDashboard.Server.Services.PcapReader;
 
-public class V2XMessageDecoder : IV2XMessageDecoder
+public class V2XMessageDecoder :
+    IV2XMessageDecoder,
+    ICamDecoder,
+    IDenmDecoder,
+    IMapemDecoder,
+    ISpatemDecoder,
+    ISremDecoder,
+    ISsemDecoder
 {
     private static readonly ConditionalWeakTable<JsonDocument, Dictionary<string, JsonElement>> PropertyIndexCache = new();
 
@@ -203,8 +210,8 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             Heading = ScaleHeading(GetDouble(payloadJson, "heading")),
             Speed = mapemSpeedScaler(GetDouble(payloadJson, "tasSpeed")),
             TransmissionPower = GetInt(payloadJson, "transmissionPower"),
-            routeNames = GetString(payloadJson, "routeNames"),
-            transitSchedule = GetString(payloadJson, "transitSchedule"),
+            RouteNames = GetString(payloadJson, "routeNames"),
+            TransitSchedule = GetString(payloadJson, "transitSchedule"),
             RequestorName = GetString(payloadJson, "requestorName")
         };
     }

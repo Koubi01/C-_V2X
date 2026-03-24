@@ -150,8 +150,8 @@ public class SREM : V2XMessage
     public double Heading { get; set; }
     public double Speed { get; set; }
     public int TransmissionPower { get; set; }
-    public string routeNames { get; set; } = string.Empty; // Optional: list of route names for visualization
-    public string transitSchedule { get; set; } = string.Empty; // Optional: transit schedule info for visualization
+    public string RouteNames { get; set; } = string.Empty; // Optional: list of route names for visualization
+    public string TransitSchedule { get; set; } = string.Empty; // Optional: transit schedule info for visualization
     public string RequestorName { get; set; } = string.Empty; // Optional: human-readable name for requestor (e.g. bus route name)
 }
 
