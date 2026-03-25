@@ -1,4 +1,5 @@
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
+using V2XDashboard.Server.Api;
 
 namespace V2XDashboard.Server.Api.Endpoints;
 
@@ -10,6 +11,12 @@ public static class MessagesEndpoints
 
         group.MapGet("/", async (IV2XMessageQueryService messageQueryService, string? messageType, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetV2XMessagesAsync(messageType, limit);
             return Results.Ok(messages);
         });
@@ -22,6 +29,12 @@ public static class MessagesEndpoints
 
         group.MapGet("/paged", async (IV2XMessageQueryService messageQueryService, string messageType = "CAM", int pageNumber = 1, int pageSize = 25) =>
         {
+            var pagingValidation = ApiRequestValidation.ValidatePaging(pageNumber, pageSize, 500);
+            if (pagingValidation is not null)
+            {
+                return pagingValidation;
+            }
+
             var messages = await messageQueryService.GetMessageListPagedAsync(messageType, pageNumber, pageSize);
             return Results.Ok(messages);
         });
@@ -34,36 +47,72 @@ public static class MessagesEndpoints
 
         group.MapGet("/cam", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetCAMMessagesAsync(limit);
             return Results.Ok(messages);
         });
 
         group.MapGet("/denm", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetDENMMessagesAsync(limit);
             return Results.Ok(messages);
         });
 
         group.MapGet("/mapem", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetMAPEMMessagesAsync(limit);
             return Results.Ok(messages);
         });
 
         group.MapGet("/spatem", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetSPATEMMessagesAsync(limit);
             return Results.Ok(messages);
         });
 
         group.MapGet("/srem", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetSREMMessagesAsync(limit);
             return Results.Ok(messages);
         });
 
         group.MapGet("/ssem", async (IV2XMessageQueryService messageQueryService, int? limit) =>
         {
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var messages = await messageQueryService.GetSSEMMessagesAsync(limit);
             return Results.Ok(messages);
         });

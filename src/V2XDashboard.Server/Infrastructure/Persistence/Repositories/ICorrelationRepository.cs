@@ -13,6 +13,8 @@ public interface ICorrelationRepository
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int? limit = null);
     Task<PagedResult<CorrelationDto>> GetCorrelationsPagedAsync(
         string? obuStationId = null,
@@ -21,6 +23,8 @@ public interface ICorrelationRepository
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 10);
     Task<SremSsemMatchDto?> GetSsemForSremAsync(int sremId);

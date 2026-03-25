@@ -1,6 +1,7 @@
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using V2XDashboard.Shared;
+using V2XDashboard.Server.Api;
 
 namespace V2XDashboard.Server.Api.Endpoints;
 
@@ -12,6 +13,12 @@ public static class MapEndpoints
 
         group.MapGet("/entities", async (IMapEntityService mapEntityService, DateTime? fromTime, DateTime? toTime) =>
         {
+            var dateRangeValidation = ApiRequestValidation.ValidateDateRange(fromTime, toTime);
+            if (dateRangeValidation is not null)
+            {
+                return dateRangeValidation;
+            }
+
             var entities = await mapEntityService.GetMapEntitiesAsync(fromTime, toTime);
             return Results.Ok(entities);
         });
@@ -26,9 +33,23 @@ public static class MapEndpoints
                 [FromQuery] string[]? messageTypes,
                 [FromQuery] string[]? vehicleCategories,
                 [FromQuery] int[]? stationTypes,
+                bool? isSecureSigned,
+                bool? isSecureEncrypted,
                 int pageNumber = 1,
                 int pageSize = 100) =>
             {
+                var dateRangeValidation = ApiRequestValidation.ValidateDateRange(fromTime, toTime);
+                if (dateRangeValidation is not null)
+                {
+                    return dateRangeValidation;
+                }
+
+                var pagingValidation = ApiRequestValidation.ValidatePaging(pageNumber, pageSize, 500);
+                if (pagingValidation is not null)
+                {
+                    return pagingValidation;
+                }
+
                 var result = await mapEntityService.GetMapEntitiesPagedAsync(
                     fromTime,
                     toTime,
@@ -36,6 +57,8 @@ public static class MapEndpoints
                     messageTypes,
                     vehicleCategories,
                     stationTypes,
+                    isSecureSigned,
+                    isSecureEncrypted,
                     pageNumber,
                     pageSize);
 

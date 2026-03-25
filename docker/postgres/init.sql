@@ -15,10 +15,21 @@ CREATE TABLE IF NOT EXISTS packets (
     destination_ip VARCHAR(45),
     source_port INTEGER,
     destination_port INTEGER,
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     payload TEXT,
     pcap_file_name VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE packets ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE packets ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE packets ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE packets ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE packets ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- CAM Messages table
 CREATE TABLE IF NOT EXISTS cam_messages (
@@ -41,11 +52,21 @@ CREATE TABLE IF NOT EXISTS cam_messages (
     decode_status VARCHAR(20),
     vehicle_length DOUBLE PRECISION,
     vehicle_width DOUBLE PRECISION,
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Keep existing databases aligned when schema already exists.
 ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS decode_status VARCHAR(20);
+ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE cam_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 ALTER TABLE cam_messages ALTER COLUMN lateral_acceleration TYPE DOUBLE PRECISION USING lateral_acceleration::DOUBLE PRECISION;
 ALTER TABLE cam_messages ALTER COLUMN vertical_acceleration TYPE DOUBLE PRECISION USING vertical_acceleration::DOUBLE PRECISION;
 
@@ -66,8 +87,19 @@ CREATE TABLE IF NOT EXISTS denm_messages (
     station_type INTEGER,
     awareness_traffic_direction INTEGER,
     original_station_type INTEGER,
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE denm_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE denm_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE denm_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE denm_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE denm_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- MAPEM Messages table
 CREATE TABLE IF NOT EXISTS mapem_messages (
@@ -84,8 +116,19 @@ CREATE TABLE IF NOT EXISTS mapem_messages (
     speed_limit VARCHAR(50),
     map_version VARCHAR(50),
     publisher_id VARCHAR(50),
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- SPATEM Messages table
 CREATE TABLE IF NOT EXISTS spatem_messages (
@@ -125,6 +168,11 @@ CREATE TABLE IF NOT EXISTS spatem_messages (
     phase5_connection_maneuver_assist_id0 INTEGER,
     phase5_connection_maneuver_assist_id1 INTEGER,
     publisher_id VARCHAR(50),
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -153,6 +201,11 @@ ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS phase4_connection_maneuver_
 ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS phase4_connection_maneuver_assist_id1 INTEGER;
 ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS phase5_connection_maneuver_assist_id0 INTEGER;
 ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS phase5_connection_maneuver_assist_id1 INTEGER;
+ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE spatem_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- SREM Messages table
 CREATE TABLE IF NOT EXISTS srem_messages (
@@ -178,8 +231,19 @@ CREATE TABLE IF NOT EXISTS srem_messages (
     route_names TEXT, 
     transit_schedule TEXT,
     requestor_name VARCHAR(255),
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE srem_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE srem_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE srem_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE srem_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE srem_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- SSEM Messages table
 CREATE TABLE IF NOT EXISTS ssem_messages (
@@ -196,13 +260,27 @@ CREATE TABLE IF NOT EXISTS ssem_messages (
     request_id_ref VARCHAR(50),
     responder_id VARCHAR(50),
     request_station_id_ref VARCHAR(50),
+    is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    security_protocol VARCHAR(50),
+    signer_id VARCHAR(128),
+    certificate_id VARCHAR(128),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE ssem_messages ADD COLUMN IF NOT EXISTS is_secure_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE ssem_messages ADD COLUMN IF NOT EXISTS is_secure_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE ssem_messages ADD COLUMN IF NOT EXISTS security_protocol VARCHAR(50);
+ALTER TABLE ssem_messages ADD COLUMN IF NOT EXISTS signer_id VARCHAR(128);
+ALTER TABLE ssem_messages ADD COLUMN IF NOT EXISTS certificate_id VARCHAR(128);
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
 CREATE INDEX IF NOT EXISTS idx_packets_packet_type ON packets(packet_type);
 CREATE INDEX IF NOT EXISTS idx_packets_pcap_file ON packets(pcap_file_name);
+CREATE INDEX IF NOT EXISTS idx_packets_secure_signed ON packets(is_secure_signed);
+CREATE INDEX IF NOT EXISTS idx_packets_secure_encrypted ON packets(is_secure_encrypted);
+CREATE INDEX IF NOT EXISTS idx_packets_signer_id ON packets(signer_id);
 
 -- CAM indexes
 CREATE INDEX IF NOT EXISTS idx_cam_generation_time ON cam_messages(generation_time);
@@ -305,3 +383,61 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_correlations_unique_srem_ssem ON obu_rsu_c
 CREATE INDEX IF NOT EXISTS idx_correlations_obu_rsu ON obu_rsu_correlations(obu_station_id, rsu_intersection_id);
 CREATE INDEX IF NOT EXISTS idx_correlations_timestamp ON obu_rsu_correlations(srem_timestamp, ssem_timestamp);
 CREATE INDEX IF NOT EXISTS idx_correlations_type ON obu_rsu_correlations(correlation_type);
+
+-- Processed files table for idempotent cumulative ingestion
+CREATE TABLE IF NOT EXISTS processed_files (
+    id SERIAL PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    file_size BIGINT NOT NULL,
+    file_hash CHAR(64) NOT NULL,
+    packet_count INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'Processed',
+    processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE processed_files ADD COLUMN IF NOT EXISTS packet_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE processed_files ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'Processed';
+ALTER TABLE processed_files ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_processed_files_hash_unique ON processed_files(file_hash);
+CREATE INDEX IF NOT EXISTS idx_processed_files_name ON processed_files(file_name);
+CREATE INDEX IF NOT EXISTS idx_processed_files_processed_at ON processed_files(processed_at DESC);
+
+-- Station profile projection tables
+CREATE TABLE IF NOT EXISTS station_profiles (
+    station_id VARCHAR(50) PRIMARY KEY,
+    entity_type VARCHAR(20) NOT NULL,
+    station_type INTEGER,
+    vehicle_category VARCHAR(100),
+    supports_secure_comm BOOLEAN NOT NULL DEFAULT FALSE,
+    supports_signed BOOLEAN NOT NULL DEFAULT FALSE,
+    supports_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+    first_seen_at TIMESTAMP NOT NULL,
+    last_seen_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS entity_type VARCHAR(20) NOT NULL DEFAULT 'Unknown';
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS station_type INTEGER;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS vehicle_category VARCHAR(100);
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS supports_secure_comm BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS supports_signed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS supports_encrypted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE station_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS station_profile_message_types (
+    station_id VARCHAR(50) NOT NULL REFERENCES station_profiles(station_id) ON DELETE CASCADE,
+    message_type VARCHAR(20) NOT NULL,
+    first_seen_at TIMESTAMP NOT NULL,
+    last_seen_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (station_id, message_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_station_profiles_entity_type ON station_profiles(entity_type);
+CREATE INDEX IF NOT EXISTS idx_station_profiles_station_type ON station_profiles(station_type);
+CREATE INDEX IF NOT EXISTS idx_station_profiles_vehicle_category ON station_profiles(vehicle_category);
+CREATE INDEX IF NOT EXISTS idx_station_profiles_supports_secure_comm ON station_profiles(supports_secure_comm);
+CREATE INDEX IF NOT EXISTS idx_station_profiles_last_seen_at ON station_profiles(last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_station_profile_message_types_type ON station_profile_message_types(message_type);

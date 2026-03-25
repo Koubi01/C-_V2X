@@ -6,6 +6,7 @@ public interface IPcapService :
     IPacketQueryService,
     IV2XMessageQueryService,
     ICorrelationService,
-    IMapEntityService
+    IMapEntityService,
+    IStationProfileService
 {
 }

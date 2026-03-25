@@ -12,6 +12,11 @@ public class Packet
     public int Length { get; set; }
     public int SourcePort { get; set; }
     public int DestinationPort { get; set; }
+    public bool IsSecureSigned { get; set; }
+    public bool IsSecureEncrypted { get; set; }
+    public string SecurityProtocol { get; set; } = string.Empty;
+    public string SignerId { get; set; } = string.Empty;
+    public string CertificateId { get; set; } = string.Empty;
     public string Payload { get; set; } = string.Empty; // Hex or base64 encoded
     public string PcapFileName { get; set; } = string.Empty;
 }

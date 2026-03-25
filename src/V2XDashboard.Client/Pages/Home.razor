@@ -168,9 +168,9 @@
 
 		try
 		{
-			var filesTask   = Http.GetFromJsonAsync<List<string>>("api/pcap/files");
-			var countsTask  = Http.GetFromJsonAsync<MessageCountsDto>("api/pcap/messages/counts");
-			var entitiesTask = Http.GetFromJsonAsync<List<MapEntityDto>>("api/pcap/map-entities");
+			var filesTask   = Http.GetFromJsonAsync<List<string>>("api/ingestion/files");
+			var countsTask  = Http.GetFromJsonAsync<MessageCountsDto>("api/messages/counts");
+			var entitiesTask = Http.GetFromJsonAsync<List<MapEntityDto>>("api/map/entities");
 
 			await Task.WhenAll(filesTask, countsTask, entitiesTask);
 
@@ -213,7 +213,7 @@
 
 		try
 		{
-			var response = await Http.PostAsync($"api/pcap/process/{Uri.EscapeDataString(selectedFile)}", null);
+			var response = await Http.PostAsync($"api/ingestion/process/{Uri.EscapeDataString(selectedFile)}", null);
 			if (!response.IsSuccessStatusCode)
 			{
 				errorMessage = await response.Content.ReadAsStringAsync();
@@ -245,7 +245,7 @@
 
 		try
 		{
-			var response = await Http.GetAsync("api/pcap/process/allFiles");
+			var response = await Http.PostAsync("api/ingestion/process/all", null);
 			if (!response.IsSuccessStatusCode)
 			{
 				errorMessage = await response.Content.ReadAsStringAsync();

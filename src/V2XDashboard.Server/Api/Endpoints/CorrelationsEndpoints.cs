@@ -1,4 +1,5 @@
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
+using V2XDashboard.Server.Api;
 
 namespace V2XDashboard.Server.Api.Endpoints;
 
@@ -16,8 +17,22 @@ public static class CorrelationsEndpoints
             string? correlationType,
             DateTime? fromTime,
             DateTime? toTime,
+            bool? isSecureSigned,
+            bool? isSecureEncrypted,
             int? limit) =>
         {
+            var dateRangeValidation = ApiRequestValidation.ValidateDateRange(fromTime, toTime);
+            if (dateRangeValidation is not null)
+            {
+                return dateRangeValidation;
+            }
+
+            var limitValidation = ApiRequestValidation.ValidateLimit(limit, 10000);
+            if (limitValidation is not null)
+            {
+                return limitValidation;
+            }
+
             var correlations = await correlationService.GetCorrelationsAsync(
                 obuStationId,
                 rsuIntersectionId,
@@ -25,6 +40,8 @@ public static class CorrelationsEndpoints
                 correlationType,
                 fromTime,
                 toTime,
+                isSecureSigned,
+                isSecureEncrypted,
                 limit ?? 100);
 
             return Results.Ok(correlations);
@@ -38,9 +55,23 @@ public static class CorrelationsEndpoints
             string? correlationType,
             DateTime? fromTime,
             DateTime? toTime,
+            bool? isSecureSigned,
+            bool? isSecureEncrypted,
             int pageNumber = 1,
             int pageSize = 10) =>
         {
+            var dateRangeValidation = ApiRequestValidation.ValidateDateRange(fromTime, toTime);
+            if (dateRangeValidation is not null)
+            {
+                return dateRangeValidation;
+            }
+
+            var pagingValidation = ApiRequestValidation.ValidatePaging(pageNumber, pageSize, 500);
+            if (pagingValidation is not null)
+            {
+                return pagingValidation;
+            }
+
             var correlations = await correlationService.GetCorrelationsPagedAsync(
                 obuStationId,
                 rsuIntersectionId,
@@ -48,6 +79,8 @@ public static class CorrelationsEndpoints
                 correlationType,
                 fromTime,
                 toTime,
+                isSecureSigned,
+                isSecureEncrypted,
                 pageNumber,
                 pageSize);
 

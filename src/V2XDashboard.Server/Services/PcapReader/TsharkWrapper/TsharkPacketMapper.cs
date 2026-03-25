@@ -147,6 +147,42 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
     {
         var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
+        var secureSigned = HasLayerOrField(
+            layers,
+            "ieee1609dot2",
+            "signature",
+            "signeddata",
+            "signed_data");
+        var secureEncrypted = HasLayerOrField(
+            layers,
+            "encrypteddata",
+            "encrypted_data",
+            "recipientinfo",
+            "aesccm");
+
+        var securityProtocol = ResolveSecurityProtocol(layers, secureSigned, secureEncrypted);
+        var signerId = ExtractFirstByKeyContains(layers, "signer", "signerid", "hashid8", "requestorid");
+        var certificateId = ExtractFirstByKeyContains(layers, "certificate", "certid", "cert_id", "cert");
+
+        packet.IsSecureSigned = secureSigned;
+        packet.IsSecureEncrypted = secureEncrypted;
+        packet.SecurityProtocol = securityProtocol;
+        packet.SignerId = signerId;
+        packet.CertificateId = certificateId;
+
+        payload["isSecureSigned"] = secureSigned;
+        payload["isSecureEncrypted"] = secureEncrypted;
+        payload["securityProtocol"] = securityProtocol;
+        if (!string.IsNullOrWhiteSpace(signerId))
+        {
+            payload["signerId"] = signerId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(certificateId))
+        {
+            payload["certificateId"] = certificateId;
+        }
+
         if (TryGetNestedString(layers, out var messageId, "its", "its.ItsPduHeader_element", "its.messageId"))
         {
             payload["messageId"] = messageId;
@@ -597,5 +633,87 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
 
         value = current;
         return true;
+    }
+
+    private static string ResolveSecurityProtocol(JsonElement layers, bool secureSigned, bool secureEncrypted)
+    {
+        if (layers.TryGetProperty("ieee1609dot2", out _))
+        {
+            return "IEEE1609.2";
+        }
+
+        if (secureSigned || secureEncrypted)
+        {
+            return "ITS-SEC";
+        }
+
+        return string.Empty;
+    }
+
+    private static bool HasLayerOrField(JsonElement root, params string[] tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (TryFindFirstByKeyContains(root, token, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string ExtractFirstByKeyContains(JsonElement root, params string[] tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (TryFindFirstByKeyContains(root, token, out var value))
+            {
+                var text = GetStringValue(value);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static bool TryFindFirstByKeyContains(JsonElement element, string token, out JsonElement found)
+    {
+        found = default;
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.Name.Contains(token, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = property.Value;
+                    return true;
+                }
+
+                if (TryFindFirstByKeyContains(property.Value, token, out found))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (TryFindFirstByKeyContains(item, token, out found))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

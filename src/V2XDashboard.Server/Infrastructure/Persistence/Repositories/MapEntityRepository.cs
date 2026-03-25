@@ -34,7 +34,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 heading AS Heading,
                 generation_time AS GenerationTime,
                 vehicle_role AS VehicleRole,
-                station_type AS StationType
+                station_type AS StationType,
+                is_secure_signed AS IsSecureSigned,
+                is_secure_encrypted AS IsSecureEncrypted
             FROM cam_messages
                         WHERE latitude IS NOT NULL
                             AND longitude IS NOT NULL
@@ -70,7 +72,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::DOUBLE PRECISION AS Heading,
                 generation_time AS GenerationTime,
                 NULL::VARCHAR AS VehicleRole,
-                NULL::INTEGER AS StationType
+                NULL::INTEGER AS StationType,
+                is_secure_signed AS IsSecureSigned,
+                is_secure_encrypted AS IsSecureEncrypted
             FROM mapem_messages
                         WHERE latitude IS NOT NULL
                             AND longitude IS NOT NULL
@@ -112,7 +116,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::DOUBLE PRECISION AS Heading,
                 s.generation_time AS GenerationTime,
                 NULL::VARCHAR AS VehicleRole,
-                NULL::INTEGER AS StationType
+                NULL::INTEGER AS StationType,
+                s.is_secure_signed AS IsSecureSigned,
+                s.is_secure_encrypted AS IsSecureEncrypted
             FROM spatem_messages s
             LEFT JOIN LATERAL (
                 SELECT m.latitude, m.longitude
@@ -164,7 +170,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 heading AS Heading,
                 generation_time AS GenerationTime,
                 vehicle_type AS VehicleRole,
-                NULL::INTEGER AS StationType
+                NULL::INTEGER AS StationType,
+                is_secure_signed AS IsSecureSigned,
+                is_secure_encrypted AS IsSecureEncrypted
             FROM srem_messages
             WHERE latitude IS NOT NULL
               AND longitude IS NOT NULL
@@ -196,7 +204,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::DOUBLE PRECISION AS Heading,
                 generation_time AS GenerationTime,
                 NULL::VARCHAR AS VehicleRole,
-                station_type AS StationType
+                station_type AS StationType,
+                is_secure_signed AS IsSecureSigned,
+                is_secure_encrypted AS IsSecureEncrypted
             FROM denm_messages
             WHERE latitude IS NOT NULL
               AND longitude IS NOT NULL
@@ -234,7 +244,9 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::DOUBLE PRECISION AS Heading,
                 ss.generation_time AS GenerationTime,
                 ss.status_code AS VehicleRole,
-                NULL::INTEGER AS StationType
+                NULL::INTEGER AS StationType,
+                ss.is_secure_signed AS IsSecureSigned,
+                ss.is_secure_encrypted AS IsSecureEncrypted
             FROM ssem_messages ss
             LEFT JOIN LATERAL (
                 SELECT m.latitude, m.longitude

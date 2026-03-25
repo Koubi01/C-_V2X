@@ -60,8 +60,8 @@
                             <MudCheckBox @bind-Value="showObu" Label="OBU" Color="Color.Primary" />
                             <MudCheckBox @bind-Value="showRsu" Label="RSU" Color="Color.Primary" />
                             <MudCheckBox @bind-Value="showCorrelations" Label="Correlations" Color="Color.Success" />
-                            <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed (future)" Color="Color.Info" />
-                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted (future)" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted" Color="Color.Info" />
                         </MudStack>
                         <MudStack Row="true" Spacing="2" Class="map-toggle-row">
                             <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
@@ -96,7 +96,7 @@
                             }
                         </MudSelect>
                         <MudText Typo="Typo.caption" Class="drawer-caption">
-                            Secure message toggles are staged for future DB columns and are currently non-blocking view switches.
+                            Secure toggles now filter both the map and paged data grids.
                         </MudText>
                     </MudStack>
                 </MudItem>
@@ -293,7 +293,7 @@
 
         try
         {
-            var config = await Http.GetFromJsonAsync<MapConfigDto>("api/pcap/map-config");
+            var config = await Http.GetFromJsonAsync<MapConfigDto>("api/map/config");
             if (config is null)
             {
                 errorMessage = "Map configuration could not be loaded.";
@@ -338,9 +338,11 @@
 
             var fromTime = fromTimeValue;
             var toTime = toTimeValue;
+            var secureSignedFilter = ResolveSecureSignedFilter();
+            var secureEncryptedFilter = ResolveSecureEncryptedFilter();
 
             var entitiesUrl = BuildMapEntitiesUrl(fromTime, toTime);
-            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType, 2000);
+            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType, secureSignedFilter, secureEncryptedFilter, 2000);
 
             allEntities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
             allCorrelations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
@@ -380,17 +382,13 @@
                 (showMapem && e.MessageType == "MAPEM") ||
                 (showSpatem && e.MessageType == "SPATEM"))
             .Where(e => IsVehicleCategorySelected(e))
-                .Where(e => IsStationTypeSelected(e))
+            .Where(e => IsStationTypeSelected(e))
+            .Where(e => PassesSecurityFilter(e.IsSecureSigned, e.IsSecureEncrypted))
             .ToList();
 
         var filteredCorrelations = showCorrelations
-            ? allCorrelations.ToList()
+            ? allCorrelations.Where(c => PassesSecurityFilter(c.IsSecureSigned, c.IsSecureEncrypted)).ToList()
             : new List<CorrelationDto>();
-
-        // Placeholder stage: secure-message check buttons are wired in UI and intentionally non-restrictive
-        // until signed/encrypted flags are available in DB/API payloads.
-        _ = showSecureSigned;
-        _ = showSecureEncrypted;
 
         mapVisibleEntities = filteredEntities;
         mapVisibleCorrelations = filteredCorrelations;
@@ -414,6 +412,8 @@
             BuildSelectedMessageTypes(),
             selectedVehicleCategories,
             selectedStationTypes,
+            ResolveSecureSignedFilter(),
+            ResolveSecureEncryptedFilter(),
             pageNumber,
             EntityGridPageSize);
 
@@ -434,7 +434,14 @@
             return;
         }
 
-        var url = BuildPagedCorrelationsUrl(fromTimeValue, toTimeValue, correlationType, pageNumber, CorrelationGridPageSize);
+        var url = BuildPagedCorrelationsUrl(
+            fromTimeValue,
+            toTimeValue,
+            correlationType,
+            ResolveSecureSignedFilter(),
+            ResolveSecureEncryptedFilter(),
+            pageNumber,
+            CorrelationGridPageSize);
         var pagedResult = await Http.GetFromJsonAsync<PagedResult<CorrelationDto>>(url) ?? new PagedResult<CorrelationDto>();
 
         correlationGridItems = pagedResult.Items.ToList();
@@ -637,7 +644,7 @@
 
         try
         {
-            var response = await Http.PostAsync("api/pcap/correlations/record", null);
+            var response = await Http.PostAsync("api/correlations/record", null);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
@@ -674,8 +681,8 @@
         }
 
         return queryParts.Count == 0
-            ? "api/pcap/map-entities"
-            : $"api/pcap/map-entities?{string.Join("&", queryParts)}";
+            ? "api/map/entities"
+            : $"api/map/entities?{string.Join("&", queryParts)}";
     }
 
     private static string BuildCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType, int limit)
@@ -699,10 +706,56 @@
 
         queryParts.Add($"limit={limit}");
 
-        return $"api/pcap/correlations?{string.Join("&", queryParts)}";
+        return $"api/correlations?{string.Join("&", queryParts)}";
     }
 
-    private static string BuildPagedCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType, int pageNumber, int pageSize)
+    private static string BuildCorrelationsUrl(
+        DateTime? fromTime,
+        DateTime? toTime,
+        string correlationType,
+        bool? isSecureSigned,
+        bool? isSecureEncrypted,
+        int limit)
+    {
+        var queryParts = new List<string>();
+
+        if (fromTime.HasValue)
+        {
+            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
+        }
+
+        if (toTime.HasValue)
+        {
+            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
+        {
+            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
+        }
+
+        if (isSecureSigned.HasValue)
+        {
+            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
+        }
+
+        if (isSecureEncrypted.HasValue)
+        {
+            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
+        }
+
+        queryParts.Add($"limit={limit}");
+        return $"api/correlations?{string.Join("&", queryParts)}";
+    }
+
+    private static string BuildPagedCorrelationsUrl(
+        DateTime? fromTime,
+        DateTime? toTime,
+        string correlationType,
+        bool? isSecureSigned,
+        bool? isSecureEncrypted,
+        int pageNumber,
+        int pageSize)
     {
         var queryParts = new List<string>
         {
@@ -725,7 +778,17 @@
             queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
         }
 
-        return $"api/pcap/correlations/paged?{string.Join("&", queryParts)}";
+        if (isSecureSigned.HasValue)
+        {
+            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
+        }
+
+        if (isSecureEncrypted.HasValue)
+        {
+            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
+        }
+
+        return $"api/correlations/paged?{string.Join("&", queryParts)}";
     }
 
     private static string BuildPagedMapEntitiesUrl(
@@ -735,6 +798,8 @@
         IEnumerable<string> messageTypes,
         IEnumerable<string> vehicleCategories,
         IEnumerable<int> stationTypes,
+        bool? isSecureSigned,
+        bool? isSecureEncrypted,
         int pageNumber,
         int pageSize)
     {
@@ -774,7 +839,55 @@
             queryParts.Add($"stationTypes={stationType}");
         }
 
-        return $"api/pcap/map-entities/paged?{string.Join("&", queryParts)}";
+        if (isSecureSigned.HasValue)
+        {
+            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
+        }
+
+        if (isSecureEncrypted.HasValue)
+        {
+            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
+        }
+
+        return $"api/map/entities/paged?{string.Join("&", queryParts)}";
+    }
+
+    private bool PassesSecurityFilter(bool isSecureSignedValue, bool isSecureEncryptedValue)
+    {
+        var signedFilter = ResolveSecureSignedFilter();
+        var encryptedFilter = ResolveSecureEncryptedFilter();
+
+        if (signedFilter.HasValue && isSecureSignedValue != signedFilter.Value)
+        {
+            return false;
+        }
+
+        if (encryptedFilter.HasValue && isSecureEncryptedValue != encryptedFilter.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool? ResolveSecureSignedFilter()
+    {
+        if (showSecureSigned && showSecureEncrypted)
+        {
+            return null;
+        }
+
+        return showSecureSigned;
+    }
+
+    private bool? ResolveSecureEncryptedFilter()
+    {
+        if (showSecureSigned && showSecureEncrypted)
+        {
+            return null;
+        }
+
+        return showSecureEncrypted;
     }
 
     private IEnumerable<string> BuildSelectedEntityTypes()

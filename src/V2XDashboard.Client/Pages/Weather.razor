@@ -118,7 +118,7 @@
         {
             messageRows.Clear();
 
-            var url = $"api/pcap/messages/paged?messageType={Uri.EscapeDataString(selectedMessageType)}&pageNumber={targetPage}&pageSize={pageSize}";
+            var url = $"api/messages/paged?messageType={Uri.EscapeDataString(selectedMessageType)}&pageNumber={targetPage}&pageSize={pageSize}";
             var result = await Http.GetFromJsonAsync<PagedResult<MessageListItemDto>>(url) ?? new PagedResult<MessageListItemDto>();
 
             messageRows.AddRange(result.Items.Select(ToRow));

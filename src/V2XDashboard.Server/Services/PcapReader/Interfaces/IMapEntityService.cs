@@ -15,6 +15,8 @@ public interface IMapEntityService
         IEnumerable<string>? messageTypes = null,
         IEnumerable<string>? vehicleCategories = null,
         IEnumerable<int>? stationTypes = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 100);
 }

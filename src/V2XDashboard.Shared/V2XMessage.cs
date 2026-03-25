@@ -10,6 +10,11 @@ public abstract class V2XMessage
     public string MessageType { get; set; } = string.Empty;
     public DateTime GenerationTime { get; set; }
     public string StationId { get; set; } = string.Empty;
+    public bool IsSecureSigned { get; set; }
+    public bool IsSecureEncrypted { get; set; }
+    public string SecurityProtocol { get; set; } = string.Empty;
+    public string SignerId { get; set; } = string.Empty;
+    public string CertificateId { get; set; } = string.Empty;
 }
 
 // CAM - Cooperative Awareness Message (Vehicle position, speed, acceleration, etc.)

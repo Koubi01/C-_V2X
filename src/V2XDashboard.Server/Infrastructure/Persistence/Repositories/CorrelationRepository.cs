@@ -206,6 +206,8 @@ public sealed class CorrelationRepository : ICorrelationRepository
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int? limit = null)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -228,7 +230,9 @@ public sealed class CorrelationRepository : ICorrelationRepository
                 s.latitude AS SremLatitude,
                 s.longitude AS SremLongitude,
                 ss.latitude AS SsemLatitude,
-                ss.longitude AS SsemLongitude
+                ss.longitude AS SsemLongitude,
+                (COALESCE(s.is_secure_signed, FALSE) OR COALESCE(ss.is_secure_signed, FALSE)) AS IsSecureSigned,
+                (COALESCE(s.is_secure_encrypted, FALSE) OR COALESCE(ss.is_secure_encrypted, FALSE)) AS IsSecureEncrypted
             FROM obu_rsu_correlations c
             LEFT JOIN srem_messages s ON c.srem_id = s.id
             LEFT JOIN ssem_messages ss ON c.ssem_id = ss.id
@@ -272,6 +276,18 @@ public sealed class CorrelationRepository : ICorrelationRepository
             parameters.Add("@ToTime", toTime.Value);
         }
 
+        if (isSecureSigned.HasValue)
+        {
+            query.Append(" AND (COALESCE(s.is_secure_signed, FALSE) OR COALESCE(ss.is_secure_signed, FALSE)) = @IsSecureSigned");
+            parameters.Add("@IsSecureSigned", isSecureSigned.Value);
+        }
+
+        if (isSecureEncrypted.HasValue)
+        {
+            query.Append(" AND (COALESCE(s.is_secure_encrypted, FALSE) OR COALESCE(ss.is_secure_encrypted, FALSE)) = @IsSecureEncrypted");
+            parameters.Add("@IsSecureEncrypted", isSecureEncrypted.Value);
+        }
+
         query.Append(" ORDER BY c.srem_timestamp DESC");
 
         if (limit.HasValue)
@@ -295,6 +311,8 @@ public sealed class CorrelationRepository : ICorrelationRepository
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 10)
     {
@@ -345,6 +363,18 @@ public sealed class CorrelationRepository : ICorrelationRepository
             parameters.Add("@ToTime", toTime.Value);
         }
 
+        if (isSecureSigned.HasValue)
+        {
+            baseFrom.Append(" AND (COALESCE(s.is_secure_signed, FALSE) OR COALESCE(ss.is_secure_signed, FALSE)) = @IsSecureSigned");
+            parameters.Add("@IsSecureSigned", isSecureSigned.Value);
+        }
+
+        if (isSecureEncrypted.HasValue)
+        {
+            baseFrom.Append(" AND (COALESCE(s.is_secure_encrypted, FALSE) OR COALESCE(ss.is_secure_encrypted, FALSE)) = @IsSecureEncrypted");
+            parameters.Add("@IsSecureEncrypted", isSecureEncrypted.Value);
+        }
+
         var countQuery = $"SELECT COUNT(*) {baseFrom}";
         var totalCount = await connection.ExecuteScalarAsync<int>(countQuery, parameters);
 
@@ -369,7 +399,9 @@ public sealed class CorrelationRepository : ICorrelationRepository
                 s.latitude AS SremLatitude,
                 s.longitude AS SremLongitude,
                 ss.latitude AS SsemLatitude,
-                ss.longitude AS SsemLongitude
+                ss.longitude AS SsemLongitude,
+                (COALESCE(s.is_secure_signed, FALSE) OR COALESCE(ss.is_secure_signed, FALSE)) AS IsSecureSigned,
+                (COALESCE(s.is_secure_encrypted, FALSE) OR COALESCE(ss.is_secure_encrypted, FALSE)) AS IsSecureEncrypted
             {baseFrom}
             ORDER BY c.srem_timestamp DESC
             LIMIT @Limit OFFSET @Offset";

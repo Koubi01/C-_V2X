@@ -28,7 +28,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
             var sql = @"INSERT INTO cam_messages (packet_id, generation_time, station_id,
                 latitude, longitude, altitude, speed, heading, station_type,
                 vehicle_role, acceleration, curvature, yaw_rate,
-                lateral_acceleration, vertical_acceleration, decode_status, vehicle_length, vehicle_width)
+                lateral_acceleration, vertical_acceleration, decode_status, vehicle_length, vehicle_width,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)
             VALUES ";
 
             var valueClauses = new List<string>();
@@ -37,7 +38,7 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 var message = chunk[i];
                 var p = i.ToString();
 
-                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @lat{p}, @lon{p}, @alt{p}, @spd{p}, @hed{p}, @stype{p}, @vrole{p}, @acc{p}, @cur{p}, @yaw{p}, @lacc{p}, @vacc{p}, @dstat{p}, @vlen{p}, @vwid{p})");
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @lat{p}, @lon{p}, @alt{p}, @spd{p}, @hed{p}, @stype{p}, @vrole{p}, @acc{p}, @cur{p}, @yaw{p}, @lacc{p}, @vacc{p}, @dstat{p}, @vlen{p}, @vwid{p}, @issigned{p}, @isencrypted{p}, @sproto{p}, @signer{p}, @cert{p})");
 
                 parameters.Add("@pid" + p, message.PacketId);
                 parameters.Add("@gen" + p, message.GenerationTime);
@@ -57,6 +58,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@dstat" + p, message.DecodeStatus);
                 parameters.Add("@vlen" + p, message.VehicleLength);
                 parameters.Add("@vwid" + p, message.VehicleWidth);
+                parameters.Add("@issigned" + p, message.IsSecureSigned);
+                parameters.Add("@isencrypted" + p, message.IsSecureEncrypted);
+                parameters.Add("@sproto" + p, message.SecurityProtocol);
+                parameters.Add("@signer" + p, message.SignerId);
+                parameters.Add("@cert" + p, message.CertificateId);
             }
 
             sql += string.Join(", ", valueClauses);
@@ -77,7 +83,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
             var sql = @"INSERT INTO denm_messages (packet_id, generation_time, station_id,
                 cause_code, detection_time, reference_time,
                 latitude, longitude, altitude,
-                relevance_traffic_direction, validity_duration, station_type, awareness_traffic_direction, original_station_type)
+                relevance_traffic_direction, validity_duration, station_type, awareness_traffic_direction, original_station_type,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)
             VALUES ";
 
             var valueClauses = new List<string>();
@@ -86,7 +93,7 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 var message = chunk[i];
                 var p = i.ToString();
 
-                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @cc{p}, @det{p}, @ref{p}, @lat{p}, @lon{p}, @alt{p}, @rtd{p}, @vd{p}, @st{p}, @atd{p}, @ost{p})");
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @cc{p}, @det{p}, @ref{p}, @lat{p}, @lon{p}, @alt{p}, @rtd{p}, @vd{p}, @st{p}, @atd{p}, @ost{p}, @issigned{p}, @isencrypted{p}, @sproto{p}, @signer{p}, @cert{p})");
 
                 parameters.Add("@pid" + p, message.PacketId);
                 parameters.Add("@gen" + p, message.GenerationTime);
@@ -102,6 +109,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@st" + p, message.StationType);
                 parameters.Add("@atd" + p, message.AwarenessTrafficDirection);
                 parameters.Add("@ost" + p, message.OriginalStationType);
+                parameters.Add("@issigned" + p, message.IsSecureSigned);
+                parameters.Add("@isencrypted" + p, message.IsSecureEncrypted);
+                parameters.Add("@sproto" + p, message.SecurityProtocol);
+                parameters.Add("@signer" + p, message.SignerId);
+                parameters.Add("@cert" + p, message.CertificateId);
             }
 
             sql += string.Join(", ", valueClauses);
@@ -121,7 +133,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
 
             var sql = @"INSERT INTO mapem_messages (packet_id, generation_time, station_id,
                 intersection_id, intersection_name, latitude, longitude,
-                lane_count, road_width, speed_limit, map_version, publisher_id)
+                lane_count, road_width, speed_limit, map_version, publisher_id,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)
             VALUES ";
 
             var valueClauses = new List<string>();
@@ -130,7 +143,7 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 var message = chunk[i];
                 var p = i.ToString();
 
-                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @lc{p}, @rw{p}, @sl{p}, @mv{p}, @pub{p})");
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @lc{p}, @rw{p}, @sl{p}, @mv{p}, @pub{p}, @issigned{p}, @isencrypted{p}, @sproto{p}, @signer{p}, @cert{p})");
 
                 parameters.Add("@pid" + p, message.PacketId);
                 parameters.Add("@gen" + p, message.GenerationTime);
@@ -144,6 +157,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@sl" + p, message.SpeedLimit);
                 parameters.Add("@mv" + p, string.IsNullOrWhiteSpace(message.MapVersion) ? "1.0" : message.MapVersion);
                 parameters.Add("@pub" + p, message.PublisherId);
+                parameters.Add("@issigned" + p, message.IsSecureSigned);
+                parameters.Add("@isencrypted" + p, message.IsSecureEncrypted);
+                parameters.Add("@sproto" + p, message.SecurityProtocol);
+                parameters.Add("@signer" + p, message.SignerId);
+                parameters.Add("@cert" + p, message.CertificateId);
             }
 
             sql += string.Join(", ", valueClauses);
@@ -174,7 +192,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 phase3_connection_maneuver_assist_id0, phase3_connection_maneuver_assist_id1,
                 phase4_connection_maneuver_assist_id0, phase4_connection_maneuver_assist_id1,
                 phase5_connection_maneuver_assist_id0, phase5_connection_maneuver_assist_id1,
-                publisher_id)");
+                publisher_id,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)");
             sql.AppendLine("VALUES");
 
             var parameters = new DynamicParameters();
@@ -220,7 +239,12 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                     "@Phase4ConnectionManeuverAssistId1" + suffix,
                     "@Phase5ConnectionManeuverAssistId0" + suffix,
                     "@Phase5ConnectionManeuverAssistId1" + suffix,
-                    "@PublisherId" + suffix
+                    "@PublisherId" + suffix,
+                    "@IsSecureSigned" + suffix,
+                    "@IsSecureEncrypted" + suffix,
+                    "@SecurityProtocol" + suffix,
+                    "@SignerId" + suffix,
+                    "@CertificateId" + suffix
                 };
 
                 sql.Append("(" + string.Join(", ", paramList) + ")");
@@ -260,6 +284,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@Phase5ConnectionManeuverAssistId0" + suffix, message.Phase5ConnectionManeuverAssistId0);
                 parameters.Add("@Phase5ConnectionManeuverAssistId1" + suffix, message.Phase5ConnectionManeuverAssistId1);
                 parameters.Add("@PublisherId" + suffix, message.PublisherId);
+                parameters.Add("@IsSecureSigned" + suffix, message.IsSecureSigned);
+                parameters.Add("@IsSecureEncrypted" + suffix, message.IsSecureEncrypted);
+                parameters.Add("@SecurityProtocol" + suffix, message.SecurityProtocol);
+                parameters.Add("@SignerId" + suffix, message.SignerId);
+                parameters.Add("@CertificateId" + suffix, message.CertificateId);
             }
 
             await connection.ExecuteAsync(sql.ToString(), parameters, transaction);
@@ -281,7 +310,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 requested_phase, vehicle_type, request_reason,
                 request_id, requestor_id, required_accuracy,
                 in_bound_lane_id, out_bound_lane_id, heading, speed, transmission_power,
-                route_names, transit_schedule, requestor_name)
+                route_names, transit_schedule, requestor_name,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)
             VALUES ";
 
             var valueClauses = new List<string>();
@@ -290,7 +320,7 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 var message = chunk[i];
                 var p = i.ToString();
 
-                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @in{p}, @iid{p}, @lat{p}, @lon{p}, @rp{p}, @vt{p}, @rr{p}, @rid{p}, @reqid{p}, @ra{p}, @ibli{p}, @obli{p}, @h{p}, @s{p}, @tp{p}, @rn{p}, @ts{p}, @rname{p})");
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @in{p}, @iid{p}, @lat{p}, @lon{p}, @rp{p}, @vt{p}, @rr{p}, @rid{p}, @reqid{p}, @ra{p}, @ibli{p}, @obli{p}, @h{p}, @s{p}, @tp{p}, @rn{p}, @ts{p}, @rname{p}, @issigned{p}, @isencrypted{p}, @sproto{p}, @signer{p}, @cert{p})");
 
                 parameters.Add("@pid" + p, message.PacketId);
                 parameters.Add("@gen" + p, message.GenerationTime);
@@ -313,6 +343,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@rn" + p, message.RouteNames);
                 parameters.Add("@ts" + p, message.TransitSchedule);
                 parameters.Add("@rname" + p, message.RequestorName);
+                parameters.Add("@issigned" + p, message.IsSecureSigned);
+                parameters.Add("@isencrypted" + p, message.IsSecureEncrypted);
+                parameters.Add("@sproto" + p, message.SecurityProtocol);
+                parameters.Add("@signer" + p, message.SignerId);
+                parameters.Add("@cert" + p, message.CertificateId);
             }
 
             sql += string.Join(", ", valueClauses);
@@ -332,7 +367,8 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
 
             var sql = @"INSERT INTO ssem_messages (packet_id, generation_time, station_id,
                 intersection_id, intersection_name, latitude, longitude,
-                status_code, granted_duration, request_id_ref, responder_id, request_station_id_ref)
+                status_code, granted_duration, request_id_ref, responder_id, request_station_id_ref,
+                is_secure_signed, is_secure_encrypted, security_protocol, signer_id, certificate_id)
             VALUES ";
 
             var valueClauses = new List<string>();
@@ -341,7 +377,7 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 var message = chunk[i];
                 var p = i.ToString();
 
-                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @sc{p}, @gd{p}, @rid{p}, @rid2{p}, @rsid{p})");
+                valueClauses.Add($"(@pid{p}, @gen{p}, @sid{p}, @iid{p}, @in{p}, @lat{p}, @lon{p}, @sc{p}, @gd{p}, @rid{p}, @rid2{p}, @rsid{p}, @issigned{p}, @isencrypted{p}, @sproto{p}, @signer{p}, @cert{p})");
 
                 parameters.Add("@pid" + p, message.PacketId);
                 parameters.Add("@gen" + p, message.GenerationTime);
@@ -355,6 +391,11 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
                 parameters.Add("@rid" + p, message.RequestIdRef);
                 parameters.Add("@rid2" + p, message.ResponderId);
                 parameters.Add("@rsid" + p, message.RequestStationIdRef);
+                parameters.Add("@issigned" + p, message.IsSecureSigned);
+                parameters.Add("@isencrypted" + p, message.IsSecureEncrypted);
+                parameters.Add("@sproto" + p, message.SecurityProtocol);
+                parameters.Add("@signer" + p, message.SignerId);
+                parameters.Add("@cert" + p, message.CertificateId);
             }
 
             sql += string.Join(", ", valueClauses);

@@ -122,7 +122,7 @@
                 queryParts.Add($"filter={Uri.EscapeDataString(filter)}");
             }
 
-            var url = $"api/pcap/packets/paged?{string.Join("&", queryParts)}";
+            var url = $"api/packets/paged?{string.Join("&", queryParts)}";
             var result = await Http.GetFromJsonAsync<PagedResult<Packet>>(url) ?? new PagedResult<Packet>();
 
             packets.Clear();

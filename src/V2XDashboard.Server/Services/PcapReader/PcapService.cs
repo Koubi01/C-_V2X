@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
@@ -16,40 +17,6 @@ namespace V2XDashboard.Server.Services.PcapReader;
 
 public class PcapService : IPcapService
 {
-    private static readonly Dictionary<int, string> StationTypeNames = new()
-    {
-        [0] = "Unknown",
-        [1] = "Pedestrian",
-        [2] = "Cyclist",
-        [3] = "Moped",
-        [4] = "Motorcycle",
-        [5] = "Passenger Car",
-        [6] = "Bus",
-        [7] = "Light Truck",
-        [8] = "Heavy Truck",
-        [9] = "Trailer",
-        [10] = "Special Vehicle",
-        [11] = "Tram",
-        [15] = "RSU"
-    };
-
-    private static readonly Dictionary<int, string> VehicleRoleNames = new()
-    {
-        [0] = "0",
-        [1] = "Public Transport",
-        [2] = "Special Transport",
-        [3] = "Dangerous Goods",
-        [4] = "Road Work",
-        [5] = "Rescue",
-        [6] = "Emergency",
-        [7] = "Safety Car",
-        [8] = "Agriculture",
-        [9] = "Commercial",
-        [10] = "Military",
-        [11] = "Road Operator",
-        [12] = "Taxi"
-    };
-
     private readonly string _connectionString;
     private readonly string _pcapDataPath;
     private readonly ITsharkParser _tsharkWrapper;
@@ -63,6 +30,8 @@ public class PcapService : IPcapService
     private readonly IV2XMessageRepository _v2xMessageRepository;
     private readonly ICorrelationRepository _correlationRepository;
     private readonly IMapEntityRepository _mapEntityRepository;
+    private readonly IStationProfileRepository _stationProfileRepository;
+    private readonly IProcessedFileRepository _processedFileRepository;
     private readonly ILogger<PcapService> _logger;
 
     public PcapService(
@@ -78,6 +47,8 @@ public class PcapService : IPcapService
         IV2XMessageRepository v2XMessageRepository,
         ICorrelationRepository correlationRepository,
         IMapEntityRepository mapEntityRepository,
+        IStationProfileRepository stationProfileRepository,
+        IProcessedFileRepository processedFileRepository,
         ILogger<PcapService> logger)
     {
         _connectionString = configuration.GetConnectionString("DefaultConnection") ??
@@ -94,6 +65,8 @@ public class PcapService : IPcapService
         _v2xMessageRepository = v2XMessageRepository;
         _correlationRepository = correlationRepository;
         _mapEntityRepository = mapEntityRepository;
+        _stationProfileRepository = stationProfileRepository;
+        _processedFileRepository = processedFileRepository;
         _logger = logger;
     }
 
@@ -137,6 +110,18 @@ public class PcapService : IPcapService
                 throw new FileNotFoundException($"PCAP file not found: {filePath}");
             }
 
+            var fileInfo = new FileInfo(filePath);
+            var fileHash = await ComputeFileSha256Async(filePath);
+
+            if (await _processedFileRepository.IsFileHashProcessedAsync(fileHash))
+            {
+                _logger.LogInformation(
+                    "Skipping already processed file {FileName} (sha256={FileHash})",
+                    fileName,
+                    fileHash);
+                return true;
+            }
+
             // Extract packets using TsharkWrapper
             var parseStopwatch = Stopwatch.StartNew();
             var packets = await _tsharkWrapper.ExtractPacketsAsync(filePath);
@@ -156,6 +141,28 @@ public class PcapService : IPcapService
             await ProcessV2XMessagesAsync(connection, transaction, packets);
             processMessagesStopwatch.Stop();
 
+            var processedFileInserted = await _processedFileRepository.TryInsertProcessedFileAsync(
+                connection,
+                transaction,
+                new ProcessedFileRecord
+                {
+                    FileName = fileName,
+                    FileSize = fileInfo.Length,
+                    FileHash = fileHash,
+                    PacketCount = packets.Count,
+                    Status = "Processed"
+                });
+
+            if (!processedFileInserted)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogInformation(
+                    "Skipping file {FileName} because hash {FileHash} was recorded while processing.",
+                    fileName,
+                    fileHash);
+                return true;
+            }
+
             await transaction.CommitAsync();
 
             // Run a second pass after the entire file is stored to maximize intersection enrichment.
@@ -163,15 +170,20 @@ public class PcapService : IPcapService
             await PopulateIntersectionMetadataForFileAsync(fileName);
             enrichmentStopwatch.Stop();
 
+            var stationProfilesStopwatch = Stopwatch.StartNew();
+            await RefreshStationProfilesAsync();
+            stationProfilesStopwatch.Stop();
+
             totalStopwatch.Stop();
 
             _logger.LogInformation(
-                "ProcessPcapFileAsync timings for {FileName}: parse={ParseMs}ms, storePackets={StorePacketsMs}ms, processV2X={ProcessV2XMs}ms, enrichment={EnrichmentMs}ms, total={TotalMs}ms, packets={PacketCount}",
+                "ProcessPcapFileAsync timings for {FileName}: parse={ParseMs}ms, storePackets={StorePacketsMs}ms, processV2X={ProcessV2XMs}ms, enrichment={EnrichmentMs}ms, stationProfiles={StationProfilesMs}ms, total={TotalMs}ms, packets={PacketCount}",
                 fileName,
                 parseStopwatch.ElapsedMilliseconds,
                 storePacketsStopwatch.ElapsedMilliseconds,
                 processMessagesStopwatch.ElapsedMilliseconds,
                 enrichmentStopwatch.ElapsedMilliseconds,
+                stationProfilesStopwatch.ElapsedMilliseconds,
                 totalStopwatch.ElapsedMilliseconds,
                 packets.Count);
 
@@ -182,6 +194,14 @@ public class PcapService : IPcapService
             _logger.LogError(ex, "Error processing PCAP file {FileName}", fileName);
             return false;
         }
+    }
+
+    private static async Task<string> ComputeFileSha256Async(string filePath)
+    {
+        await using var stream = File.OpenRead(filePath);
+        using var sha256 = SHA256.Create();
+        var hashBytes = await sha256.ComputeHashAsync(stream);
+        return Convert.ToHexString(hashBytes);
     }
 
     public async Task<bool> ProcessAllPcapFilesAsync()
@@ -206,14 +226,30 @@ public class PcapService : IPcapService
         }
     }
 
-    public async Task<List<Packet>> GetPacketsAsync(string? filter = null, int? limit = null)
+    public async Task<List<Packet>> GetPacketsAsync(
+        string? filter = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
+        string? signerId = null,
+        int? limit = null)
     {
-        return await _packetRepository.GetPacketsAsync(filter, limit);
+        return await _packetRepository.GetPacketsAsync(filter, isSecureSigned, isSecureEncrypted, signerId, limit);
     }
 
-    public async Task<PagedResult<Packet>> GetPacketsPagedAsync(string? filter = null, int pageNumber = 1, int pageSize = 25)
+    public async Task<PagedResult<Packet>> GetPacketsPagedAsync(
+        string? filter = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
+        string? signerId = null,
+        int pageNumber = 1,
+        int pageSize = 25)
     {
-        return await _packetRepository.GetPacketsPagedAsync(filter, pageNumber, pageSize);
+        return await _packetRepository.GetPacketsPagedAsync(filter, isSecureSigned, isSecureEncrypted, signerId, pageNumber, pageSize);
+    }
+
+    public async Task<SecurityMetadataSummaryDto> GetSecurityMetadataSummaryAsync()
+    {
+        return await _packetRepository.GetSecurityMetadataSummaryAsync();
     }
 
     public async Task<PagedResult<MessageListItemDto>> GetMessageListPagedAsync(string messageType, int pageNumber = 1, int pageSize = 25)
@@ -437,6 +473,8 @@ public class PcapService : IPcapService
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int? limit = null)
     {
         return await _correlationRepository.GetCorrelationsAsync(
@@ -446,6 +484,8 @@ public class PcapService : IPcapService
             correlationType,
             fromTime,
             toTime,
+            isSecureSigned,
+            isSecureEncrypted,
             limit);
     }
 
@@ -456,6 +496,8 @@ public class PcapService : IPcapService
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 10)
     {
@@ -466,6 +508,8 @@ public class PcapService : IPcapService
             correlationType,
             fromTime,
             toTime,
+            isSecureSigned,
+            isSecureEncrypted,
             pageNumber,
             pageSize);
     }
@@ -494,6 +538,42 @@ public class PcapService : IPcapService
         return await _mapEntityRepository.GetMapEntitiesAsync(fromTime, toTime);
     }
 
+    public async Task RefreshStationProfilesAsync()
+    {
+        await _stationProfileRepository.RebuildStationProfilesAsync();
+    }
+
+    public async Task<PagedResult<StationProfileDto>> GetStationProfilesPagedAsync(
+        string? stationId = null,
+        string? entityType = null,
+        string? messageType = null,
+        string? vehicleCategory = null,
+        int? stationType = null,
+        bool? supportsSecureComm = null,
+        int pageNumber = 1,
+        int pageSize = 50)
+    {
+        return await _stationProfileRepository.GetStationProfilesPagedAsync(
+            stationId,
+            entityType,
+            messageType,
+            vehicleCategory,
+            stationType,
+            supportsSecureComm,
+            pageNumber,
+            pageSize);
+    }
+
+    public async Task<StationProfileDto?> GetStationProfileByStationIdAsync(string stationId)
+    {
+        return await _stationProfileRepository.GetStationProfileByStationIdAsync(stationId);
+    }
+
+    public async Task<StationCapabilitiesSummaryDto> GetStationCapabilitiesAsync()
+    {
+        return await _stationProfileRepository.GetStationCapabilitiesSummaryAsync();
+    }
+
     public async Task<PagedResult<MapEntityDto>> GetMapEntitiesPagedAsync(
         DateTime? fromTime = null,
         DateTime? toTime = null,
@@ -501,6 +581,8 @@ public class PcapService : IPcapService
         IEnumerable<string>? messageTypes = null,
         IEnumerable<string>? vehicleCategories = null,
         IEnumerable<int>? stationTypes = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 100)
     {
@@ -526,11 +608,22 @@ public class PcapService : IPcapService
         var selectedStationTypes = (stationTypes ?? Array.Empty<int>())
             .ToHashSet();
 
+        HashSet<string> stationIdsFromProfile = new(StringComparer.OrdinalIgnoreCase);
+        if (normalizedVehicleCategories.Count > 0 || selectedStationTypes.Count > 0)
+        {
+            stationIdsFromProfile = await _stationProfileRepository.GetStationIdsByProfileFiltersAsync(
+                normalizedVehicleCategories.Count > 0 ? normalizedVehicleCategories : null,
+                selectedStationTypes.Count > 0 ? selectedStationTypes : null);
+        }
+
         var filtered = all
             .Where(entity => normalizedEntityTypes.Count == 0 || normalizedEntityTypes.Contains(entity.EntityType))
             .Where(entity => normalizedMessageTypes.Count == 0 || normalizedMessageTypes.Contains(entity.MessageType))
-            .Where(entity => normalizedVehicleCategories.Count == 0 || normalizedVehicleCategories.Contains(GetVehicleCategory(entity)))
-            .Where(entity => selectedStationTypes.Count == 0 || !entity.StationType.HasValue || selectedStationTypes.Contains(entity.StationType.Value))
+            .Where(entity =>
+                (normalizedVehicleCategories.Count == 0 && selectedStationTypes.Count == 0) ||
+                (!string.IsNullOrWhiteSpace(entity.StationId) && stationIdsFromProfile.Contains(entity.StationId)))
+            .Where(entity => !isSecureSigned.HasValue || entity.IsSecureSigned == isSecureSigned.Value)
+            .Where(entity => !isSecureEncrypted.HasValue || entity.IsSecureEncrypted == isSecureEncrypted.Value)
             .OrderByDescending(entity => entity.GenerationTime)
             .ToList();
 
@@ -546,44 +639,5 @@ public class PcapService : IPcapService
             PageNumber = safePageNumber,
             PageSize = safePageSize
         };
-    }
-
-    private static string GetVehicleCategory(MapEntityDto entity)
-    {
-        if (!string.IsNullOrWhiteSpace(entity.VehicleRole))
-        {
-            var normalizedRole = entity.VehicleRole.Trim().ToLowerInvariant();
-            if (int.TryParse(normalizedRole, out var roleCode))
-            {
-                if (VehicleRoleNames.TryGetValue(roleCode, out var roleName))
-                {
-                    return roleName;
-                }
-
-                return roleCode == 0
-                    ? "0"
-                    : $"Vehicle Role {roleCode}";
-            }
-
-            return normalizedRole switch
-            {
-                "publictransport" => "Public Transport",
-                "public_transport" => "Public Transport",
-                "emergency" => "Emergency",
-                "specialtransport" => "Special Transport",
-                "dangerousgoods" => "Dangerous Goods",
-                "roadwork" => "Road Work",
-                _ => char.ToUpperInvariant(normalizedRole[0]) + normalizedRole[1..]
-            };
-        }
-
-        if (!entity.StationType.HasValue)
-        {
-            return "Unknown";
-        }
-
-        return StationTypeNames.TryGetValue(entity.StationType.Value, out var stationName)
-            ? stationName
-            : "Unknown";
     }
 }

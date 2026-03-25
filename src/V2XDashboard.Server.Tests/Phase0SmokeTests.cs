@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using V2XDashboard.Server;
@@ -22,7 +24,7 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
     [Fact]
     public async Task ProcessOneFile_ReturnsOk()
     {
-        var response = await _client.PostAsync("/api/pcap/process/data1.pcap", content: null);
+        var response = await _client.PostAsync("/api/ingestion/process/data1.pcap", content: null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -62,6 +64,92 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
         Assert.NotEmpty(payload.Items);
     }
 
+    [Fact]
+    public async Task QueryStationProfilesPaged_ReturnsOkWithPagedResult()
+    {
+        var response = await _client.GetAsync("/api/stations/profiles?pageNumber=1&pageSize=25");
+        var payload = await response.Content.ReadFromJsonAsync<PagedResult<StationProfileDto>>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.TotalCount > 0);
+        Assert.NotEmpty(payload.Items);
+    }
+
+    [Fact]
+    public async Task MessagesPaged_WithInvalidPageNumber_ReturnsBadRequestValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/messages/paged?messageType=CAM&pageNumber=0&pageSize=25");
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.Errors.ContainsKey("pageNumber"));
+    }
+
+    [Fact]
+    public async Task MapEntitiesPaged_WithInvalidDateRange_ReturnsBadRequestValidationProblem()
+    {
+        var response = await _client.GetAsync(
+            "/api/map/entities/paged?fromTime=2026-01-02T00:00:00Z&toTime=2026-01-01T00:00:00Z&pageNumber=1&pageSize=10");
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.Errors.ContainsKey("fromTime"));
+    }
+
+    [Fact]
+    public async Task MessagesPaged_PerformanceSmoke_CompletesUnderOneSecond()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var response = await _client.GetAsync("/api/messages/paged?messageType=CAM&pageNumber=1&pageSize=25");
+        stopwatch.Stop();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(stopwatch.ElapsedMilliseconds < 1000, $"Expected endpoint under 1000ms but was {stopwatch.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task IngestionSchedulerStatus_ReturnsOkWithPayload()
+    {
+        var response = await _client.GetAsync("/api/ingestion/scheduler/status");
+        var payload = await response.Content.ReadFromJsonAsync<IngestionSchedulerStatusDto>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.IntervalSeconds > 0);
+    }
+
+    [Fact]
+    public async Task IngestionSchedulerStartStop_ReturnsOk()
+    {
+        var stopResponse = await _client.PostAsync("/api/ingestion/scheduler/stop", content: null);
+        var stopPayload = await stopResponse.Content.ReadFromJsonAsync<IngestionSchedulerStatusDto>();
+
+        Assert.Equal(HttpStatusCode.OK, stopResponse.StatusCode);
+        Assert.NotNull(stopPayload);
+        Assert.False(stopPayload!.IsRunning);
+
+        var startResponse = await _client.PostAsync("/api/ingestion/scheduler/start", content: null);
+        var startPayload = await startResponse.Content.ReadFromJsonAsync<IngestionSchedulerStatusDto>();
+
+        Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
+        Assert.NotNull(startPayload);
+        Assert.True(startPayload!.IsRunning);
+    }
+
+    [Fact]
+    public async Task PacketSecuritySummary_ReturnsOkWithPayload()
+    {
+        var response = await _client.GetAsync("/api/packets/security/summary");
+        var payload = await response.Content.ReadFromJsonAsync<SecurityMetadataSummaryDto>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.TotalPackets >= payload.SecurePackets);
+    }
+
     public sealed class TestAppFactory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -70,10 +158,42 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
             {
                 services.AddSingleton<IPcapIngestionService, FakePcapIngestionService>();
                 services.AddSingleton<IV2XMessageQueryService, FakeMessageQueryService>();
+                services.AddSingleton<IPacketQueryService, FakePacketQueryService>();
                 services.AddSingleton<IMapEntityService, FakeMapEntityService>();
                 services.AddSingleton<ICorrelationService, FakeCorrelationService>();
+                services.AddSingleton<IStationProfileService, FakeStationProfileService>();
+                services.AddSingleton<IIngestionScheduler, FakeIngestionScheduler>();
             });
         }
+    }
+
+    private sealed class FakePacketQueryService : IPacketQueryService
+    {
+        public Task<List<Packet>> GetPacketsAsync(string? filter = null, bool? isSecureSigned = null, bool? isSecureEncrypted = null, string? signerId = null, int? limit = null)
+            => Task.FromResult(new List<Packet>());
+
+        public Task<PagedResult<Packet>> GetPacketsPagedAsync(string? filter = null, bool? isSecureSigned = null, bool? isSecureEncrypted = null, string? signerId = null, int pageNumber = 1, int pageSize = 25)
+            => Task.FromResult(new PagedResult<Packet>
+            {
+                Items = new List<Packet>(),
+                TotalCount = 0,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            });
+
+        public Task<Packet?> GetPacketByIdAsync(int id)
+            => Task.FromResult<Packet?>(new Packet { Id = id, PacketType = "CAM" });
+
+        public Task<SecurityMetadataSummaryDto> GetSecurityMetadataSummaryAsync()
+            => Task.FromResult(new SecurityMetadataSummaryDto
+            {
+                TotalPackets = 4,
+                SignedPackets = 3,
+                EncryptedPackets = 1,
+                SecurePackets = 3,
+                DistinctSigners = 2,
+                DistinctCertificates = 2
+            });
     }
 
     private sealed class FakePcapIngestionService : IPcapIngestionService
@@ -151,6 +271,8 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
             IEnumerable<string>? messageTypes = null,
             IEnumerable<string>? vehicleCategories = null,
             IEnumerable<int>? stationTypes = null,
+            bool? isSecureSigned = null,
+            bool? isSecureEncrypted = null,
             int pageNumber = 1,
             int pageSize = 100)
             => Task.FromResult(new PagedResult<MapEntityDto>
@@ -184,6 +306,8 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
             string? correlationType = null,
             DateTime? fromTime = null,
             DateTime? toTime = null,
+            bool? isSecureSigned = null,
+            bool? isSecureEncrypted = null,
             int? limit = null)
             => Task.FromResult(new List<CorrelationDto> { BuildCorrelation() });
 
@@ -194,6 +318,8 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
             string? correlationType = null,
             DateTime? fromTime = null,
             DateTime? toTime = null,
+            bool? isSecureSigned = null,
+            bool? isSecureEncrypted = null,
             int pageNumber = 1,
             int pageSize = 10)
             => Task.FromResult(new PagedResult<CorrelationDto>
@@ -225,6 +351,104 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
                 SremTimestamp = DateTime.UtcNow,
                 SsemTimestamp = DateTime.UtcNow,
                 TimeDeltaMs = 25
+            };
+        }
+    }
+
+    private sealed class FakeIngestionScheduler : IIngestionScheduler
+    {
+        private bool _isRunning = true;
+
+        public Task<IngestionSchedulerStatusDto> GetStatusAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(BuildStatus());
+        }
+
+        public Task<IngestionSchedulerStatusDto> StartSchedulingAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _isRunning = true;
+            return Task.FromResult(BuildStatus());
+        }
+
+        public Task<IngestionSchedulerStatusDto> StopSchedulingAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _isRunning = false;
+            return Task.FromResult(BuildStatus());
+        }
+
+        private IngestionSchedulerStatusDto BuildStatus()
+        {
+            return new IngestionSchedulerStatusDto
+            {
+                IsSchedulerNode = true,
+                IsRunning = _isRunning,
+                IntervalSeconds = 30,
+                TotalRuns = 1,
+                LastRunStartedAtUtc = DateTime.UtcNow.AddSeconds(-1),
+                LastRunFinishedAtUtc = DateTime.UtcNow,
+                LastRunSucceeded = true,
+                LastRunDurationMs = 100
+            };
+        }
+    }
+
+    private sealed class FakeStationProfileService : IStationProfileService
+    {
+        public Task RefreshStationProfilesAsync() => Task.CompletedTask;
+
+        public Task<PagedResult<StationProfileDto>> GetStationProfilesPagedAsync(
+            string? stationId = null,
+            string? entityType = null,
+            string? messageType = null,
+            string? vehicleCategory = null,
+            int? stationType = null,
+            bool? supportsSecureComm = null,
+            int pageNumber = 1,
+            int pageSize = 50)
+        {
+            var profile = BuildProfile();
+            return Task.FromResult(new PagedResult<StationProfileDto>
+            {
+                Items = new List<StationProfileDto> { profile },
+                TotalCount = 1,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            });
+        }
+
+        public Task<StationProfileDto?> GetStationProfileByStationIdAsync(string stationId)
+            => Task.FromResult<StationProfileDto?>(BuildProfile());
+
+        public Task<StationCapabilitiesSummaryDto> GetStationCapabilitiesAsync()
+            => Task.FromResult(new StationCapabilitiesSummaryDto
+            {
+                TotalStations = 1,
+                ObuStations = 1,
+                SecureStations = 1,
+                SignedStations = 1,
+                MessageTypeCoverage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["CAM"] = 1
+                }
+            });
+
+        private static StationProfileDto BuildProfile()
+        {
+            return new StationProfileDto
+            {
+                StationId = "station-a",
+                EntityType = "OBU",
+                StationType = 5,
+                VehicleCategory = "Passenger Car",
+                SupportsSecureComm = true,
+                SupportsSigned = true,
+                SupportsEncrypted = false,
+                FirstSeenAt = DateTime.UtcNow.AddMinutes(-5),
+                LastSeenAt = DateTime.UtcNow,
+                ObservedMessageTypes = new List<string> { "CAM" }
             };
         }
     }

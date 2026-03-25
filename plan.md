@@ -1,5 +1,11 @@
 # V2X Dashboard Server Implementation Plan
 
+## 0) Locked Architecture Decisions
+
+- Scheduler deployment model: single-node only.
+- Default cyclic interval: 30 seconds.
+- API migration policy: remove old routes (no compatibility layer).
+
 ## 1) Server Analysis Summary (Current State)
 
 ### Strengths
@@ -133,8 +139,8 @@
   - secure stations summary
 
 ### Existing endpoint compatibility
-- Keep current routes during transition.
-- Add deprecation markers and migration notes for consumers.
+- Remove old `/api/pcap/*` query routes after new endpoint groups are in place.
+- Keep only the new endpoint groups (`/api/ingestion`, `/api/stations`, `/api/security`, plus current feature groups).
 
 ## 7) Implementation Phases
 
@@ -143,25 +149,59 @@
 - Integrate checks into ingestion flow.
 - Add integration tests for duplicate processing behavior.
 
+Phase 1 progress:
+- Completed: Added `processed_files` schema with unique SHA-256 hash constraint.
+- Completed: Implemented interface-first processed file repository and DI registration.
+- Completed: Integrated pre-ingest hash check and transactional processed-file write in ingestion service.
+- Completed: Added service-level duplicate skip test and validated test suite.
+
 ### Phase 2: Cyclic mode
 - Add background scheduler service with interval from configuration.
 - Add scheduler status and control APIs.
 - Add health checks and operational logging.
+
+Phase 2 progress:
+- Completed: Added single-node ingestion scheduler as hosted background service.
+- Completed: Added scheduler options with 30-second default interval and scheduler-node guard.
+- Completed: Added minimal APIs for scheduler status/start/stop under `/api/ingestion/scheduler/*`.
+- Completed: Added ingestion command endpoints under `/api/ingestion/*`.
+- Completed: Added scheduler endpoint smoke tests and validated passing test suite.
+- Completed: Removed legacy `/api/pcap/*` route surface and migrated client/test usage to new endpoint groups.
 
 ### Phase 3: Security metadata support
 - Extend parser for security fields where available.
 - Persist metadata and expose query endpoints.
 - Surface secure metrics in dashboard data contracts.
 
+Phase 3 progress:
+- Completed: Added packet and message security metadata fields (`is_secure_signed`, `is_secure_encrypted`, `security_protocol`, `signer_id`, `certificate_id`) to shared contracts and decoder mapping.
+- Completed: Extended tshark packet mapper with security metadata extraction heuristics and payload enrichment.
+- Completed: Added schema support and indexes for secure metadata in `packets` and all V2X message tables.
+- Completed: Added packet API security filters and `GET /api/packets/security/summary` endpoint.
+- Completed: Added smoke test coverage for packet security summary endpoint and validated full test suite.
+
 ### Phase 4: Station profile domain
 - Build station profile projection pipeline.
 - Add station profile minimal APIs with paging/filtering.
 - Align map/entity filtering to profile-backed data.
 
+Phase 4 progress:
+- Completed: Added station profile projection schema (`station_profiles`, `station_profile_message_types`) with query indexes.
+- Completed: Implemented station profile projection repository (`RebuildStationProfilesAsync`) and paged/filterable query methods.
+- Completed: Added minimal API group under `/api/stations` for profiles, profile detail, capabilities, and manual refresh.
+- Completed: Wired station profile refresh into ingestion flow and exposed query methods through service contracts.
+- Completed: Aligned map paged filtering to station-profile-backed station category/type matching.
+
 ### Phase 5: Hardening and cleanup
 - Move residual mixed responsibilities out of orchestration service.
 - Add validation and consistent ProblemDetails responses.
 - Expand integration tests and add performance smoke tests.
+
+Phase 5 progress:
+- Completed: Added centralized API request validation helper for paging, limits, required values, and date ranges.
+- Completed: Applied consistent `ValidationProblem` responses across packets/messages/map/correlations/stations/ingestion endpoints.
+- Completed: Added smoke coverage for invalid paging and invalid date ranges (400 + validation payload assertions).
+- Completed: Added lightweight endpoint performance smoke test for paged message query latency budget.
 
 ## 8) Testing Strategy
 
@@ -177,9 +217,10 @@
 
 - Add config section: Ingestion
   - Mode: Manual | Cumulative | Cyclic
-  - IntervalSeconds
+  - IntervalSeconds (default: 30)
   - MaxFilesPerRun
   - ReprocessPolicy
+- Single-node guard: scheduler enabled only on one server instance.
 - Add metrics/logging:
   - files scanned
   - files processed

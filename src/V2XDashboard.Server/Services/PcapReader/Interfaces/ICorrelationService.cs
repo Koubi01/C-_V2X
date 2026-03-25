@@ -12,6 +12,8 @@ public interface ICorrelationService
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int? limit = null);
 
     Task<PagedResult<CorrelationDto>> GetCorrelationsPagedAsync(
@@ -21,6 +23,8 @@ public interface ICorrelationService
         string? correlationType = null,
         DateTime? fromTime = null,
         DateTime? toTime = null,
+        bool? isSecureSigned = null,
+        bool? isSecureEncrypted = null,
         int pageNumber = 1,
         int pageSize = 10);
 

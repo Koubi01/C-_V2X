@@ -8,6 +8,7 @@ public static class PcapQueryEndpoints
         app.MapMessagesEndpoints();
         app.MapCorrelationsEndpoints();
         app.MapMapEndpoints();
+        app.MapStationsEndpoints();
 
         return app;
     }

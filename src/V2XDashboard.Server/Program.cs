@@ -1,6 +1,7 @@
 
 using V2XDashboard.Server.Api.Endpoints;
 using V2XDashboard.Server.Extensions;
+using V2XDashboard.Server.Services.PcapReader.Scheduling;
 
 namespace V2XDashboard.Server;
 
@@ -33,6 +34,8 @@ public class Program
 
         // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
         builder.Services.AddSwaggerGen();
+        builder.Services.Configure<IngestionSchedulerOptions>(
+            builder.Configuration.GetSection("Ingestion:Scheduler"));
 
         builder.Services
             .AddPcapApplication()
@@ -64,9 +67,8 @@ public class Program
 
         app.UseAuthorization();
 
-        // map the API controllers/endpoints
-        app.MapControllers();
-        app.MapProcessingEndpoints();
+        // map the API endpoints
+        app.MapIngestionEndpoints();
         app.MapPcapQueryEndpoints();
         app.MapRazorPages();
 
