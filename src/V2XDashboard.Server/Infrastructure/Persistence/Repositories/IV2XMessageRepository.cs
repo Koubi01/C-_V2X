@@ -19,5 +19,5 @@ public interface IV2XMessageRepository
     Task<List<SPATEM>> GetSPATEMMessagesAsync(int? limit = null);
     Task<List<SREM>> GetSREMMessagesAsync(int? limit = null);
     Task<List<SSEM>> GetSSEMMessagesAsync(int? limit = null);
-    Task<V2XMessage?> GetV2XMessageByIdAsync(int id);
+    Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null);
 }

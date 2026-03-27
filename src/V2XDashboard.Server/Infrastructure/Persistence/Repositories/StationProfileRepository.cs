@@ -17,8 +17,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
     public async Task RebuildStationProfilesAsync()
     {
         const string truncateSql = @"
-            TRUNCATE TABLE station_profile_message_types;
-            TRUNCATE TABLE station_profiles;";
+            TRUNCATE TABLE station_profile_message_types, station_profiles;";
 
         const string insertProfilesSql = @"
             WITH source AS (
@@ -39,8 +38,8 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 SELECT
                     station_id,
                     'EVENT'::VARCHAR AS entity_type,
-                    station_type,
-                    COALESCE(CAST(station_type AS VARCHAR), 'Unknown') AS vehicle_category,
+                    COALESCE(station_type, original_station_type) AS station_type,
+                    COALESCE(CAST(COALESCE(station_type, original_station_type) AS VARCHAR), 'Unknown') AS vehicle_category,
                     is_secure_signed,
                     is_secure_encrypted,
                     generation_time,
@@ -81,7 +80,15 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 SELECT
                     station_id,
                     'OBU'::VARCHAR AS entity_type,
-                    NULL::INTEGER AS station_type,
+                    CASE
+                        WHEN NULLIF(TRIM(vehicle_type), '') ~ '^[0-9]+$'
+                             AND (
+                                 LENGTH(TRIM(vehicle_type)) < 10
+                                 OR (LENGTH(TRIM(vehicle_type)) = 10 AND TRIM(vehicle_type) <= '2147483647')
+                             )
+                            THEN TRIM(vehicle_type)::INTEGER
+                        ELSE NULL
+                    END AS station_type,
                     COALESCE(NULLIF(vehicle_type, ''), 'Unknown') AS vehicle_category,
                     is_secure_signed,
                     is_secure_encrypted,
@@ -122,7 +129,8 @@ public sealed class StationProfileRepository : IStationProfileRepository
                     WHEN BOOL_OR(entity_type = 'OBU') THEN 'OBU'
                     ELSE 'EVENT'
                 END AS entity_type,
-                MAX(station_type) FILTER (WHERE station_type IS NOT NULL) AS station_type,
+                (ARRAY_AGG(station_type ORDER BY generation_time DESC)
+                    FILTER (WHERE station_type IS NOT NULL))[1] AS station_type,
                 (ARRAY_AGG(vehicle_category ORDER BY generation_time DESC)
                     FILTER (WHERE vehicle_category IS NOT NULL AND vehicle_category <> ''))[1] AS vehicle_category,
                 BOOL_OR(COALESCE(is_secure_signed, FALSE) OR COALESCE(is_secure_encrypted, FALSE)) AS supports_secure_comm,

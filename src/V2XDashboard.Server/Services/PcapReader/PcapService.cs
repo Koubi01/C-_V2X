@@ -209,15 +209,19 @@ public class PcapService : IPcapService
         try
         {
             var files = await GetPcapFilesAsync();
+            var allSucceeded = true;
+
             foreach (var file in files)
             {
                 bool success = await ProcessPcapFileAsync(file);
                 if (!success)
                 {
+                    allSucceeded = false;
                     _logger.LogWarning("Failed to process file {FileName}", file);
                 }
             }
-            return true;
+
+            return allSucceeded;
         }
         catch (Exception ex)
         {
@@ -269,7 +273,9 @@ public class PcapService : IPcapService
         // If specific message type requested, query only that table
         if (!string.IsNullOrEmpty(messageType))
         {
-            switch (messageType.ToUpper())
+            var normalizedMessageType = messageType.Trim().ToUpperInvariant();
+
+            switch (normalizedMessageType)
             {
                 case "CAM":
                     allMessages.AddRange(await GetCAMMessagesAsync(limit));
@@ -289,6 +295,8 @@ public class PcapService : IPcapService
                 case "SSEM":
                     allMessages.AddRange(await GetSSEMMessagesAsync(limit));
                     break;
+                default:
+                    throw new ArgumentException($"Unsupported messageType '{messageType}'.", nameof(messageType));
             }
         }
         else
@@ -341,9 +349,9 @@ public class PcapService : IPcapService
         return await _packetRepository.GetPacketByIdAsync(id);
     }
 
-    public async Task<V2XMessage?> GetV2XMessageByIdAsync(int id)
+    public async Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null)
     {
-        return await _v2xMessageRepository.GetV2XMessageByIdAsync(id);
+        return await _v2xMessageRepository.GetV2XMessageByIdAsync(id, messageType);
     }
 
     private async Task StorePacketsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets)

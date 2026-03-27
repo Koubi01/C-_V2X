@@ -241,7 +241,7 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
         public Task<List<SSEM>> GetSSEMMessagesAsync(int? limit = null)
             => Task.FromResult(new List<SSEM>());
 
-        public Task<V2XMessage?> GetV2XMessageByIdAsync(int id)
+        public Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null)
             => Task.FromResult<V2XMessage?>(BuildCam());
 
         private static CAM BuildCam()

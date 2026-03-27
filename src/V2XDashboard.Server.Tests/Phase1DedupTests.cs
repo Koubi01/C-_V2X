@@ -175,7 +175,7 @@ public class Phase1DedupTests
         public Task<List<SPATEM>> GetSPATEMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<SREM>> GetSREMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<SSEM>> GetSSEMMessagesAsync(int? limit = null) => throw new NotSupportedException();
-        public Task<V2XMessage?> GetV2XMessageByIdAsync(int id) => throw new NotSupportedException();
+        public Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null) => throw new NotSupportedException();
     }
 
     private sealed class StubCorrelationRepository : ICorrelationRepository

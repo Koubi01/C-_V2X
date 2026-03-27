@@ -67,6 +67,10 @@ public sealed class IngestionSchedulerService : BackgroundService, IIngestionSch
                 using var scope = _scopeFactory.CreateScope();
                 var ingestionService = scope.ServiceProvider.GetRequiredService<IPcapIngestionService>();
                 success = await ingestionService.ProcessAllPcapFilesAsync();
+                if (!success)
+                {
+                    error = "One or more files failed during scheduled ingestion.";
+                }
             }
             catch (Exception ex)
             {

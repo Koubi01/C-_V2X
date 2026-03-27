@@ -545,11 +545,87 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
     public Task<List<SREM>> GetSREMMessagesAsync(int? limit = null) => GetMessagesAsync<SREM>("srem_messages", limit);
     public Task<List<SSEM>> GetSSEMMessagesAsync(int? limit = null) => GetMessagesAsync<SSEM>("ssem_messages", limit);
 
-    public async Task<V2XMessage?> GetV2XMessageByIdAsync(int id)
+    public async Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
-        return await connection.QueryFirstOrDefaultAsync<V2XMessage>(
-            "SELECT * FROM v2x_messages WHERE id = @Id", new { Id = id });
+
+        if (!string.IsNullOrWhiteSpace(messageType))
+        {
+            return messageType.Trim().ToUpperInvariant() switch
+            {
+                "CAM" => await connection.QueryFirstOrDefaultAsync<CAM>("SELECT * FROM cam_messages WHERE id = @Id", new { Id = id }),
+                "DENM" => await connection.QueryFirstOrDefaultAsync<DENM>("SELECT * FROM denm_messages WHERE id = @Id", new { Id = id }),
+                "MAPEM" => await connection.QueryFirstOrDefaultAsync<MAPEM>("SELECT * FROM mapem_messages WHERE id = @Id", new { Id = id }),
+                "SPATEM" => await connection.QueryFirstOrDefaultAsync<SPATEM>("SELECT * FROM spatem_messages WHERE id = @Id", new { Id = id }),
+                "SREM" => await connection.QueryFirstOrDefaultAsync<SREM>("SELECT * FROM srem_messages WHERE id = @Id", new { Id = id }),
+                "SSEM" => await connection.QueryFirstOrDefaultAsync<SSEM>("SELECT * FROM ssem_messages WHERE id = @Id", new { Id = id }),
+                _ => throw new ArgumentException($"Unsupported messageType '{messageType}'.", nameof(messageType))
+            };
+        }
+
+        var hasCam = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM cam_messages WHERE id = @Id)", new { Id = id });
+        var hasDenm = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM denm_messages WHERE id = @Id)", new { Id = id });
+        var hasMapem = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM mapem_messages WHERE id = @Id)", new { Id = id });
+        var hasSpatem = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM spatem_messages WHERE id = @Id)", new { Id = id });
+        var hasSrem = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM srem_messages WHERE id = @Id)", new { Id = id });
+        var hasSsem = await connection.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM ssem_messages WHERE id = @Id)", new { Id = id });
+
+        var matchCount = (hasCam ? 1 : 0)
+            + (hasDenm ? 1 : 0)
+            + (hasMapem ? 1 : 0)
+            + (hasSpatem ? 1 : 0)
+            + (hasSrem ? 1 : 0)
+            + (hasSsem ? 1 : 0);
+
+        if (matchCount == 0)
+        {
+            return null;
+        }
+
+        if (matchCount > 1)
+        {
+            throw new InvalidOperationException(
+                $"Message id '{id}' is ambiguous across message tables. Specify messageType.");
+        }
+
+        if (hasCam)
+        {
+            return await connection.QueryFirstOrDefaultAsync<CAM>(
+                "SELECT * FROM cam_messages WHERE id = @Id", new { Id = id });
+        }
+
+        if (hasDenm)
+        {
+            return await connection.QueryFirstOrDefaultAsync<DENM>(
+                "SELECT * FROM denm_messages WHERE id = @Id", new { Id = id });
+        }
+
+        if (hasMapem)
+        {
+            return await connection.QueryFirstOrDefaultAsync<MAPEM>(
+                "SELECT * FROM mapem_messages WHERE id = @Id", new { Id = id });
+        }
+
+        if (hasSpatem)
+        {
+            return await connection.QueryFirstOrDefaultAsync<SPATEM>(
+                "SELECT * FROM spatem_messages WHERE id = @Id", new { Id = id });
+        }
+
+        if (hasSrem)
+        {
+            return await connection.QueryFirstOrDefaultAsync<SREM>(
+                "SELECT * FROM srem_messages WHERE id = @Id", new { Id = id });
+        }
+
+        return await connection.QueryFirstOrDefaultAsync<SSEM>(
+            "SELECT * FROM ssem_messages WHERE id = @Id", new { Id = id });
     }
 
     private async Task<List<TMessage>> GetMessagesAsync<TMessage>(string tableName, int? limit)

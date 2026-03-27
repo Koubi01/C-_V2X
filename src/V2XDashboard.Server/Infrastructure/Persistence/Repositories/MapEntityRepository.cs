@@ -44,9 +44,14 @@ public sealed class MapEntityRepository : IMapEntityRepository
                             AND longitude BETWEEN -180 AND 180
                             AND NOT (latitude = 0 AND longitude = 0)";
 
-        if (fromTime.HasValue || toTime.HasValue)
+        if (fromTime.HasValue)
         {
-            obuQuery += " AND generation_time BETWEEN @FromTime AND @ToTime";
+            obuQuery += " AND generation_time >= @FromTime";
+        }
+
+        if (toTime.HasValue)
+        {
+            obuQuery += " AND generation_time <= @ToTime";
         }
 
         obuQuery += " ORDER BY station_id, generation_time DESC LIMIT 1000";
@@ -82,21 +87,34 @@ public sealed class MapEntityRepository : IMapEntityRepository
                             AND longitude BETWEEN -180 AND 180
                             AND NOT (latitude = 0 AND longitude = 0)";
 
-        if (fromTime.HasValue || toTime.HasValue)
+        if (fromTime.HasValue)
         {
-            rsuMapemQuery += " AND generation_time BETWEEN @FromTime AND @ToTime";
+            rsuMapemQuery += " AND generation_time >= @FromTime";
+        }
+
+        if (toTime.HasValue)
+        {
+            rsuMapemQuery += " AND generation_time <= @ToTime";
         }
 
         rsuMapemQuery += " ORDER BY generation_time DESC LIMIT 500";
 
         var rsuParameters = new DynamicParameters();
-        if (fromTime.HasValue) rsuParameters.Add("@FromTime", fromTime.Value);
-        if (toTime.HasValue) rsuParameters.Add("@ToTime", toTime.Value);
+        rsuParameters.Add("@FromTime", fromTime);
+        rsuParameters.Add("@ToTime", toTime);
 
         var rsuMapemEntities = await connection.QueryAsync<MapEntityDto>(rsuMapemQuery, rsuParameters);
         entities.AddRange(rsuMapemEntities);
 
         var rsuSpatemQuery = @"
+            WITH recent_spatem AS (
+                SELECT *
+                FROM spatem_messages
+                WHERE (@FromTime IS NULL OR generation_time >= @FromTime)
+                  AND (@ToTime IS NULL OR generation_time <= @ToTime)
+                ORDER BY generation_time DESC
+                LIMIT 500
+            )
             SELECT
                 'RSU' AS EntityType,
                 'SPATEM' AS MessageType,
@@ -119,7 +137,7 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::INTEGER AS StationType,
                 s.is_secure_signed AS IsSecureSigned,
                 s.is_secure_encrypted AS IsSecureEncrypted
-            FROM spatem_messages s
+            FROM recent_spatem s
             LEFT JOIN LATERAL (
                 SELECT m.latitude, m.longitude
                 FROM mapem_messages m
@@ -145,11 +163,6 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 OR (mapem_ref.latitude IS NOT NULL
                   AND mapem_ref.longitude IS NOT NULL)
             )";
-
-        if (fromTime.HasValue || toTime.HasValue)
-        {
-            rsuSpatemQuery += " AND generation_time BETWEEN @FromTime AND @ToTime";
-        }
 
         rsuSpatemQuery += " ORDER BY generation_time DESC LIMIT 500";
 
@@ -180,9 +193,14 @@ public sealed class MapEntityRepository : IMapEntityRepository
               AND longitude BETWEEN -180 AND 180
               AND NOT (latitude = 0 AND longitude = 0)";
 
-        if (fromTime.HasValue || toTime.HasValue)
+        if (fromTime.HasValue)
         {
-            obuSremQuery += " AND generation_time BETWEEN @FromTime AND @ToTime";
+            obuSremQuery += " AND generation_time >= @FromTime";
+        }
+
+        if (toTime.HasValue)
+        {
+            obuSremQuery += " AND generation_time <= @ToTime";
         }
 
         obuSremQuery += " ORDER BY generation_time DESC LIMIT 1000";
@@ -214,9 +232,14 @@ public sealed class MapEntityRepository : IMapEntityRepository
               AND longitude BETWEEN -180 AND 180
               AND NOT (latitude = 0 AND longitude = 0)";
 
-        if (fromTime.HasValue || toTime.HasValue)
+        if (fromTime.HasValue)
         {
-            denmQuery += " AND generation_time BETWEEN @FromTime AND @ToTime";
+            denmQuery += " AND generation_time >= @FromTime";
+        }
+
+        if (toTime.HasValue)
+        {
+            denmQuery += " AND generation_time <= @ToTime";
         }
 
         denmQuery += " ORDER BY generation_time DESC LIMIT 1000";
@@ -225,6 +248,14 @@ public sealed class MapEntityRepository : IMapEntityRepository
         entities.AddRange(denmEntities);
 
         var ssemQuery = @"
+            WITH recent_ssem AS (
+                SELECT *
+                FROM ssem_messages
+                WHERE (@FromTime IS NULL OR generation_time >= @FromTime)
+                  AND (@ToTime IS NULL OR generation_time <= @ToTime)
+                ORDER BY generation_time DESC
+                LIMIT 1000
+            )
             SELECT
                 'RSU' AS EntityType,
                 'SSEM' AS MessageType,
@@ -247,7 +278,7 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 NULL::INTEGER AS StationType,
                 ss.is_secure_signed AS IsSecureSigned,
                 ss.is_secure_encrypted AS IsSecureEncrypted
-            FROM ssem_messages ss
+            FROM recent_ssem ss
             LEFT JOIN LATERAL (
                 SELECT m.latitude, m.longitude
                 FROM mapem_messages m
@@ -273,11 +304,6 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 OR (mapem_ref.latitude IS NOT NULL
                   AND mapem_ref.longitude IS NOT NULL)
             )";
-
-        if (fromTime.HasValue || toTime.HasValue)
-        {
-            ssemQuery += " AND ss.generation_time BETWEEN @FromTime AND @ToTime";
-        }
 
         ssemQuery += " ORDER BY ss.generation_time DESC LIMIT 1000";
 
