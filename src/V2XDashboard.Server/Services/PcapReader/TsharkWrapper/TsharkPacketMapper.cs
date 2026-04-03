@@ -194,7 +194,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             payload["stationId"] = stationId;
         }
 
-        if (packet.PacketType == "CAM")
+        if(packet.PacketType == "CAM")
         {
             if (TryGetNestedString(layers, out var latitude, "its", "cam.CamPayload_element", "cam.camParameters_element", "cam.basicContainer_element", "its.referencePosition_element", "its.latitude"))
             {
@@ -210,7 +210,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             {
                 payload["altitude"] = altitude;
             }
-
+            
             if (TryGetNestedString(layers, out var speed, "its", "cam.CamPayload_element", "cam.camParameters_element", "cam.highFrequencyContainer_tree", "cam.basicVehicleContainerHighFrequency_element", "cam.speed_element", "its.speedValue"))
             {
                 payload["speed"] = speed;
@@ -229,7 +229,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             if (TryGetNestedString(layers, out var vehicleRole, "its", "cam.CamPayload_element", "cam.camParameters_element", "cam.lowFrequencyContainer_tree", "cam.basicVehicleContainerLowFrequency_element", "cam.vehicleRole"))
             {
                 payload["vehicleRole"] = vehicleRole;
-            }
+            }        
 
             if (TryGetNestedString(layers, out var acceleration, "its", "cam.CamPayload_element", "cam.camParameters_element", "cam.highFrequencyContainer_tree", "cam.basicVehicleContainerHighFrequency_element", "cam.longitudinalAcceleration_element", "its.value"))
             {
@@ -266,8 +266,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                 payload["vehicleWidth"] = vehicleWidth;
             }
         }
-
-        if (packet.PacketType == "DENM")
+        if(packet.PacketType == "DENM")
         {
             if (TryGetNestedString(layers, out var denmLatitude, "its", "denm.DenmPayload_element", "denm.management_element", "denm.eventPosition_element", "its.latitude"))
             {
@@ -314,13 +313,12 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                 payload["awarenessTrafficDirection"] = awarenessTrafficDirection;
             }
 
-            if (TryGetNestedString(layers, out var denmStationType, "its", "denm.DenmPayload_element", "denm.management_element", "denm.actionId_element", "its.originatingStationId"))
+            if (TryGetNestedString(layers, out var denmStationType, "its", "denm.DenmPayload_element", "denm.management_element", "denm.actionId_element","its.originatingStationId"))
             {
                 payload["denmOriginalStationId"] = denmStationType;
             }
         }
-
-        if (packet.PacketType == "MAPEM")
+        if(packet.PacketType == "MAPEM")
         {
             if (TryGetNestedStringAny(layers, out var intersectionId,
                     ["its", "dsrc.MapData_element", "dsrc.mdIntersections_tree", "Item 0", "dsrc.IntersectionGeometry_element", "dsrc.igId_element", "dsrc.irId"]))
@@ -369,18 +367,18 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             {
                 payload["mapVersion"] = mapVersion;
             }
-
+            // MAPEM: Extract publisherId (RSU that published this map)
             if (TryGetNestedString(layers, out var mapemPublisherId, "its", "its.ItsPduHeader_element", "its.stationId"))
             {
-                if (layers.TryGetProperty("its", out var itsCheckLayer) &&
+                // Only set publisherId for MAPEM messages (detect via message type or presence of MapData)
+                if (layers.TryGetProperty("its", out var itsCheckLayer) && 
                     itsCheckLayer.TryGetProperty("dsrc.MapData_element", out _))
                 {
                     payload["publisherId"] = mapemPublisherId;
                 }
             }
         }
-
-        if (packet.PacketType == "SPATEM")
+        if(packet.PacketType == "SPATEM")
         {
             if (TryGetNestedStringAny(layers, out var spatIntersectionId,
                     ["its", "dsrc.SPAT_element", "dsrc.spatIntersections_tree", "Item 0", "dsrc.IntersectionState_element", "dsrc.isId_element", "dsrc.irId"]))
@@ -388,6 +386,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                 payload["intersectionId"] = spatIntersectionId;
             }
 
+            // Parse up to six movement states, each with up to two maneuver assists.
             for (var movementIndex = 0; movementIndex < 6; movementIndex++)
             {
                 if (TryGetNestedStringAny(layers, out var signalGroup,
@@ -432,30 +431,30 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                     payload[$"phase{movementIndex}ConnectionManeuverAssistId{maneuverIndex}"] = connectionManeuverAssistId;
                 }
             }
-
+            // SPATEM: Extract publisherId (RSU that published this SPAT)
             if (TryGetNestedString(layers, out var spatPublisherId, "its", "its.ItsPduHeader_element", "its.stationId"))
             {
-                if (layers.TryGetProperty("its", out var itsCheckLayer2) &&
+                // Only set publisherId for SPATEM messages (detect via presence of SPAT_element)
+                if (layers.TryGetProperty("its", out var itsCheckLayer2) && 
                     itsCheckLayer2.TryGetProperty("dsrc.SPAT_element", out _))
                 {
                     payload["publisherId"] = spatPublisherId;
                 }
             }
         }
-
-        if (packet.PacketType == "SREM")
+        if(packet.PacketType == "SREM")
         {
-            if (TryGetNestedStringAny(layers, out var name, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.name"]))
+            if (TryGetNestedStringAny(layers, out var name, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.name" ]))
             {
                 payload["requestorName"] = name;
             }
 
-            if (TryGetNestedStringAny(layers, out var lat, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvPosition_element", "dsrc.lat"]))
+            if (TryGetNestedStringAny(layers, out var lat, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvPosition_element","dsrc.lat"]))
             {
                 payload["latitude"] = lat;
             }
 
-            if (TryGetNestedStringAny(layers, out var lon, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvPosition_element", "dsrc.long"]))
+            if (TryGetNestedStringAny(layers, out var lon, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvPosition_element","dsrc.long"]))
             {
                 payload["longitude"] = lon;
             }
@@ -465,12 +464,12 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             {
                 payload["requestedPhase"] = requestedPhase;
             }
-
+        
             if (TryGetNestedString(layers, out var vehicleType, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdType_element", "dsrc.role"]))
             {
                 payload["vehicleType"] = vehicleType;
-            }
-
+            }        
+            
             if (TryGetNestedStringAny(layers, out var requestReason,
                 ["its", "dsrc.SignalRequestMessage_element", "dsrc.requests_tree", "Item 0", "dsrc.SignalRequestPackage_element", "dsrc.srpRequest_element", "dsrc.requestType"]))
             {
@@ -496,44 +495,39 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
             }
 
             if (TryGetNestedStringAny(layers, out var inBoundLane,
-                ["its", "dsrc.SignalRequestMessage_element", "dsrc.requests_tree", "Item 0", "dsrc.SignalRequestPackage_element", "dsrc.srpRequest_element", "dsrc.inBoundLane_tree", "dsrc.approach"]))
+                ["its", "dsrc.SignalRequestMessage_element", "dsrc.requests_tree", "Item 0", "dsrc.SignalRequestPackage_element", "dsrc.srpRequest_element", "dsrc.inBoundLane_tree", "dsrc.approach" ]))
             {
                 payload["inBoundLane"] = inBoundLane;
             }
-
             if (TryGetNestedStringAny(layers, out var outBoundLane,
-                ["its", "dsrc.SignalRequestMessage_element", "dsrc.requests_tree", "Item 0", "dsrc.SignalRequestPackage_element", "dsrc.srpRequest_element", "dsrc.outBoundLane_tree", "dsrc.approach"]))
+                ["its", "dsrc.SignalRequestMessage_element", "dsrc.requests_tree", "Item 0", "dsrc.SignalRequestPackage_element", "dsrc.srpRequest_element", "dsrc.outBoundLane_tree", "dsrc.approach" ]))
             {
                 payload["outBoundLane"] = outBoundLane;
-            }
-
+            }        
+            
             if (TryGetNestedStringAny(layers, out var headingSRem, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvHeading"]))
             {
                 payload["heading"] = headingSRem;
             }
-
-            if (TryGetNestedStringAny(layers, out var tasSpeed, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvSpeed_element", "dsrc.tasSpeed"]))
+            if (TryGetNestedStringAny(layers, out var tasSpeed, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvSpeed_element","dsrc.tasSpeed"]))
             {
                 payload["tasSpeed"] = tasSpeed;
             }
-
-            if (TryGetNestedStringAny(layers, out var transmissionPower, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvSpeed_element", "dsrc.transmisson"]))
+            if (TryGetNestedStringAny(layers, out var transmissionPower, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.rdPosition_element", "dsrc.rpvSpeed_element","dsrc.transmisson"]))
             {
                 payload["transmissionPower"] = transmissionPower;
             }
-
-            if (TryGetNestedStringAny(layers, out var routeNames, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.routeName"]))
+            
+            if (TryGetNestedStringAny(layers, out var routeNames, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.routeName" ]))
             {
                 payload["routeNames"] = routeNames;
             }
-
             if (TryGetNestedStringAny(layers, out var transitSchedule, ["its", "dsrc.SignalRequestMessage_element", "dsrc.requestor_element", "dsrc.transitSchedule"]))
             {
                 payload["transitSchedule"] = transitSchedule;
             }
         }
-
-        if (packet.PacketType == "SSEM")
+        if(packet.PacketType == "SSEM")
         {
             if (TryGetNestedStringAny(layers, out var ssemIntersectionId,
                     ["its", "dsrc.SignalStatusMessage_element", "dsrc.signalStatusMessage.status_tree", "Item 0", "dsrc.SignalStatus_element", "dsrc.ssId_element", "dsrc.irId"]))
@@ -553,6 +547,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                 payload["grantedDuration"] = grantedDuration;
             }
 
+            // SSEM: Extract requestIdRef (reference to original SREM requestID)
             if (TryGetNestedStringAny(layers, out var requestIdRef,
                     ["its", "dsrc.SignalStatusMessage_element", "dsrc.signalStatusMessage.status_tree", "Item 0", "dsrc.SignalStatus_element", "dsrc.sigStatus_tree", "Item 0", "dsrc.SignalStatusPackage_element", "dsrc.requester_element", "dsrc.sriRequest"]))
             {
@@ -565,6 +560,7 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
                 payload["requestStationIdRef"] = requestStationIdRef;
             }
 
+            // SSEM: Extract responderId (RSU that responded to the request)
             if (TryGetNestedStringAny(layers, out var responderId,
                     ["its", "dsrc.SignalStatusMessage_element", "dsrc.signalStatusMessage.status_tree", "Item 0", "dsrc.SignalStatus_element", "dsrc.ssId_element", "dsrc.irId"]))
             {
@@ -574,7 +570,6 @@ public sealed class TsharkPacketMapper : ITsharkPacketMapper
 
         return payload.Count == 0 ? string.Empty : JsonSerializer.Serialize(payload);
     }
-
     private static string[] BuildSpatMovementPath(int movementIndex, params string[] suffix)
     {
         var prefix = new[]

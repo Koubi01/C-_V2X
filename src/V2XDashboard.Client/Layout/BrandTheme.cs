@@ -20,7 +20,7 @@ public static class BrandTheme
             AppbarBackground = "#0F2D3D",
             AppbarText = "#F8FAFC",
             DrawerBackground = "#FFFFFF",
-            DrawerText = "#1F2937"
+            DrawerText = "#1F2937",
         },
         Typography = new Typography
         {

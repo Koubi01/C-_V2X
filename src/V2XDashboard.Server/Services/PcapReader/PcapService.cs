@@ -220,7 +220,7 @@ public class PcapService : IPcapService
                     _logger.LogWarning("Failed to process file {FileName}", file);
                 }
             }
-
+            
             return allSucceeded;
         }
         catch (Exception ex)

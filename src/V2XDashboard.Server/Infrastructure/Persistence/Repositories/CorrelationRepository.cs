@@ -444,31 +444,41 @@ public sealed class CorrelationRepository : ICorrelationRepository
     private static Task UpdateSpatemIntersectionForFileAsync(IDbConnection connection, string fileName)
     {
         const string query = @"
-            UPDATE spatem_messages s
-            SET intersection_name = COALESCE((
-                    SELECT m.intersection_name
+            WITH target AS (
+                SELECT s.id, s.generation_time, s.intersection_id
+                FROM spatem_messages s
+                JOIN packets p ON p.id = s.packet_id
+                WHERE p.pcap_file_name = @FileName
+                ),
+                resolved AS (
+                    SELECT
+                    t.id,
+                    m_best.intersection_name,
+                    m_best.latitude,
+                    m_best.longitude
+                    FROM target t
+                    LEFT JOIN LATERAL (
+                    SELECT m.intersection_name, m.latitude, m.longitude
                     FROM mapem_messages m
-                    WHERE m.intersection_id = s.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
+                    WHERE m.intersection_id = t.intersection_id
+                    AND m.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                    AND t.generation_time + INTERVAL '10 minutes'
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - t.generation_time))) ASC
                     LIMIT 1
-                ), s.intersection_name),
-                latitude = COALESCE((
-                    SELECT m.latitude
-                    FROM mapem_messages m
-                    WHERE m.intersection_id = s.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
-                    LIMIT 1
-                ), s.latitude),
-                longitude = COALESCE((
-                    SELECT m.longitude
-                    FROM mapem_messages m
-                    WHERE m.intersection_id = s.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - s.generation_time))) ASC
-                    LIMIT 1
-                ), s.longitude)
-            FROM packets p
-            WHERE s.packet_id = p.id
-              AND p.pcap_file_name = @FileName";
+                    ) m_best ON TRUE
+                )
+                UPDATE spatem_messages s
+                SET
+                intersection_name = COALESCE(r.intersection_name, s.intersection_name),
+                latitude = COALESCE(r.latitude, s.latitude),
+                longitude = COALESCE(r.longitude, s.longitude)
+                FROM resolved r
+                WHERE s.id = r.id
+                AND (
+                s.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, s.intersection_name)
+                OR s.latitude IS DISTINCT FROM COALESCE(r.latitude, s.latitude)
+                OR s.longitude IS DISTINCT FROM COALESCE(r.longitude, s.longitude)
+                );";
 
         return connection.ExecuteAsync(query, new { FileName = fileName });
     }
@@ -476,24 +486,38 @@ public sealed class CorrelationRepository : ICorrelationRepository
     private static Task UpdateSremIntersectionForFileAsync(IDbConnection connection, string fileName)
     {
         const string query = @"
-            UPDATE srem_messages s
-            SET intersection_name = COALESCE((
-                    SELECT ss.intersection_name
-                    FROM ssem_messages ss
-                    WHERE ss.request_station_id_ref = s.requestor_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time))) ASC
-                    LIMIT 1
-                ), s.intersection_name),
-                intersection_id = COALESCE((
-                    SELECT ss.intersection_id
-                    FROM ssem_messages ss
-                    WHERE ss.request_station_id_ref = s.requestor_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time))) ASC
-                    LIMIT 1
-                ), s.intersection_id)
-            FROM packets p
-            WHERE s.packet_id = p.id
-              AND p.pcap_file_name = @FileName";
+            WITH target AS (
+                SELECT s.id, s.generation_time, s.requestor_id
+                FROM srem_messages s
+                JOIN packets p ON p.id = s.packet_id
+                WHERE p.pcap_file_name = @FileName
+                ),
+                resolved AS (
+                SELECT
+                t.id,
+                ss_best.intersection_name,
+                ss_best.intersection_id
+                FROM target t
+                LEFT JOIN LATERAL (
+                SELECT ss.intersection_name, ss.intersection_id
+                FROM ssem_messages ss
+                WHERE ss.request_station_id_ref = t.requestor_id
+                AND ss.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                AND t.generation_time + INTERVAL '10 minutes'
+                ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - t.generation_time))) ASC
+                LIMIT 1
+                ) ss_best ON TRUE
+                )
+                UPDATE srem_messages s
+                SET
+                intersection_name = COALESCE(r.intersection_name, s.intersection_name),
+                intersection_id = COALESCE(r.intersection_id, s.intersection_id)
+                FROM resolved r
+                WHERE s.id = r.id
+                AND (
+                s.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, s.intersection_name)
+                OR s.intersection_id IS DISTINCT FROM COALESCE(r.intersection_id, s.intersection_id)
+                );";
 
         return connection.ExecuteAsync(query, new { FileName = fileName });
     }
@@ -501,31 +525,41 @@ public sealed class CorrelationRepository : ICorrelationRepository
     private static Task UpdateSsemIntersectionForFileAsync(IDbConnection connection, string fileName)
     {
         const string query = @"
-            UPDATE ssem_messages ss
-            SET intersection_name = COALESCE((
-                    SELECT m.intersection_name
-                    FROM mapem_messages m
-                    WHERE m.intersection_id = ss.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
-                    LIMIT 1
-                ), ss.intersection_name),
-                latitude = COALESCE((
-                    SELECT m.latitude
-                    FROM mapem_messages m
-                    WHERE m.intersection_id = ss.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
-                    LIMIT 1
-                ), ss.latitude),
-                longitude = COALESCE((
-                    SELECT m.longitude
-                    FROM mapem_messages m
-                    WHERE m.intersection_id = ss.intersection_id
-                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - ss.generation_time))) ASC
-                    LIMIT 1
-                ), ss.longitude)
-            FROM packets p
-            WHERE ss.packet_id = p.id
-              AND p.pcap_file_name = @FileName";
+            WITH target AS (
+                SELECT ss.id, ss.generation_time, ss.intersection_id
+                FROM ssem_messages ss
+                JOIN packets p ON p.id = ss.packet_id
+                WHERE p.pcap_file_name = @FileName
+                ),
+                resolved AS (
+                SELECT
+                t.id,
+                m_best.intersection_name,
+                m_best.latitude,
+                m_best.longitude
+                FROM target t
+                LEFT JOIN LATERAL (
+                SELECT m.intersection_name, m.latitude, m.longitude
+                FROM mapem_messages m
+                WHERE m.intersection_id = t.intersection_id
+                AND m.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                AND t.generation_time + INTERVAL '10 minutes'
+                ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - t.generation_time))) ASC
+                LIMIT 1
+                ) m_best ON TRUE
+                )
+                UPDATE ssem_messages ss
+                SET
+                intersection_name = COALESCE(r.intersection_name, ss.intersection_name),
+                latitude = COALESCE(r.latitude, ss.latitude),
+                longitude = COALESCE(r.longitude, ss.longitude)
+                FROM resolved r
+                WHERE ss.id = r.id
+                AND (
+                ss.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, ss.intersection_name)
+                OR ss.latitude IS DISTINCT FROM COALESCE(r.latitude, ss.latitude)
+                OR ss.longitude IS DISTINCT FROM COALESCE(r.longitude, ss.longitude)
+                );";
 
         return connection.ExecuteAsync(query, new { FileName = fileName });
     }

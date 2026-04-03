@@ -110,8 +110,8 @@ public sealed class MapEntityRepository : IMapEntityRepository
             WITH recent_spatem AS (
                 SELECT *
                 FROM spatem_messages
-                WHERE (@FromTime IS NULL OR generation_time >= @FromTime)
-                  AND (@ToTime IS NULL OR generation_time <= @ToTime)
+                WHERE (@FromTime::timestamp IS NULL OR generation_time >= @FromTime::timestamp)
+                  AND (@ToTime::timestamp IS NULL OR generation_time <= @ToTime::timestamp)
                 ORDER BY generation_time DESC
                 LIMIT 500
             )
@@ -123,11 +123,13 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 s.intersection_name AS IntersectionName,
                 s.publisher_id AS PublisherId,
                 CASE
-                    WHEN s.latitude = 0 AND s.longitude = 0 THEN COALESCE(mapem_ref.latitude, s.latitude)
+                    WHEN s.latitude IS NULL OR s.longitude IS NULL OR (s.latitude = 0 AND s.longitude = 0)
+                        THEN COALESCE(mapem_ref.latitude, s.latitude)
                     ELSE s.latitude
                 END AS Latitude,
                 CASE
-                    WHEN s.latitude = 0 AND s.longitude = 0 THEN COALESCE(mapem_ref.longitude, s.longitude)
+                    WHEN s.latitude IS NULL OR s.longitude IS NULL OR (s.latitude = 0 AND s.longitude = 0)
+                        THEN COALESCE(mapem_ref.longitude, s.longitude)
                     ELSE s.longitude
                 END AS Longitude,
                 NULL::DOUBLE PRECISION AS Speed,
@@ -251,8 +253,8 @@ public sealed class MapEntityRepository : IMapEntityRepository
             WITH recent_ssem AS (
                 SELECT *
                 FROM ssem_messages
-                WHERE (@FromTime IS NULL OR generation_time >= @FromTime)
-                  AND (@ToTime IS NULL OR generation_time <= @ToTime)
+                WHERE (@FromTime::timestamp IS NULL OR generation_time >= @FromTime::timestamp)
+                  AND (@ToTime::timestamp IS NULL OR generation_time <= @ToTime::timestamp)
                 ORDER BY generation_time DESC
                 LIMIT 1000
             )
@@ -264,11 +266,13 @@ public sealed class MapEntityRepository : IMapEntityRepository
                 ss.intersection_name AS IntersectionName,
                 ss.responder_id AS PublisherId,
                 CASE
-                    WHEN ss.latitude = 0 AND ss.longitude = 0 THEN COALESCE(mapem_ref.latitude, ss.latitude)
+                    WHEN ss.latitude IS NULL OR ss.longitude IS NULL OR (ss.latitude = 0 AND ss.longitude = 0)
+                        THEN COALESCE(mapem_ref.latitude, ss.latitude)
                     ELSE ss.latitude
                 END AS Latitude,
                 CASE
-                    WHEN ss.latitude = 0 AND ss.longitude = 0 THEN COALESCE(mapem_ref.longitude, ss.longitude)
+                    WHEN ss.latitude IS NULL OR ss.longitude IS NULL OR (ss.latitude = 0 AND ss.longitude = 0)
+                        THEN COALESCE(mapem_ref.longitude, ss.longitude)
                     ELSE ss.longitude
                 END AS Longitude,
                 NULL::DOUBLE PRECISION AS Speed,

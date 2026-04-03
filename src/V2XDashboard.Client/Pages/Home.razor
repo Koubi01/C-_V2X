@@ -4,16 +4,12 @@
 
 <PageTitle>Dashboard</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="dashboard-page">
+<MudContainer MaxWidth="MaxWidth.False" style="max-height: 100%;" Class="dashboard-page">
 	<MudStack Spacing="3">
-		<MudPaper Class="dashboard-hero" Elevation="0">
+		<MudPaper Class="dashboard-hero" Elevation="1">
 			<MudGrid Spacing="3">
 				<MudItem xs="12" md="7">
-					<MudText Typo="Typo.overline" Class="hero-kicker">V2X PCAP Dashboard</MudText>
-					<MudText Typo="Typo.h3">Operate the capture pipeline from one place.</MudText>
-					<MudText Typo="Typo.body1" Class="hero-copy">
-						Process PCAP files, inspect recently decoded traffic, and track OBU to RSU correlations without leaving the browser.
-					</MudText>
+					<MudText Typo="Typo.h3">V2X PCAP Dashboard</MudText>
 				</MudItem>
 				<MudItem xs="12" md="5">
 					<MudPaper Class="hero-actions" Elevation="0">
@@ -31,7 +27,7 @@
 								<MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ProcessAllFilesAsync" Disabled="@isBusy">
 									Process All
 								</MudButton>
-								<MudButton Variant="Variant.Text" Color="Color.Default" OnClick="LoadDashboardAsync" Disabled="@isBusy">
+								<MudButton Variant="Variant.Text" OnClick="LoadDashboardAsync" Disabled="@isBusy">
 									Refresh
 								</MudButton>
 							</MudStack>
@@ -51,7 +47,7 @@
 			<MudProgressLinear Indeterminate="true" Color="Color.Primary" />
 		}
 
-		<MudGrid Spacing="3">
+		<MudGrid Spacing="2">
 			<MudItem xs="12" sm="6" lg="3">
 				<MudPaper Class="metric-card" Elevation="0">
 					<MudText Typo="Typo.overline">Available Files</MudText>
@@ -82,38 +78,11 @@
 			</MudItem>
 		</MudGrid>
 
-		<MudGrid Spacing="3">
-			<MudItem xs="12" md="5">
-				<MudPaper Class="panel-card" Elevation="0">
-					<MudStack Row="true" Justify="Justify.SpaceBetween">
-						<MudText Typo="Typo.h6">Available PCAP Files</MudText>
-						<MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined">@pcapFiles.Count files</MudChip>
-					</MudStack>
-					<MudStack Spacing="1" Class="mt-3">
-						@if (pcapFiles.Count == 0)
-						{
-							<MudPaper Class="file-pill" Elevation="0">
-								<MudText Typo="Typo.body2">No PCAP files found.</MudText>
-							</MudPaper>
-						}
-						else
-						{
-							@foreach (var file in pcapFiles.Take(8))
-							{
-								<MudPaper Class="file-pill" Elevation="0">
-									<MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
-									<MudText Typo="Typo.body2">@file</MudText>
-								</MudPaper>
-							}
-						}
-					</MudStack>
-				</MudPaper>
-			</MudItem>
-			<MudItem xs="12" md="7">
+		<MudGrid Spacing="2">
+			<MudItem xs="12">
 				<MudPaper Class="panel-card" Elevation="0">
 					<MudStack Row="true" Justify="Justify.SpaceBetween">
 						<MudText Typo="Typo.h6">Message Families</MudText>
-						<MudText Typo="Typo.caption">Total stored per decoder</MudText>
 					</MudStack>
 					<MudTable Items="messageSummaryRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="mt-3">
 						<HeaderContent>
@@ -132,16 +101,6 @@
 				</MudPaper>
 			</MudItem>
 		</MudGrid>
-
-		<MudPaper Class="panel-card" Elevation="0">
-			<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-				<MudText Typo="Typo.h6">Packet Explorer</MudText>
-				<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="packets">Open Packet Explorer</MudButton>
-			</MudStack>
-			<MudText Typo="Typo.body2" Class="mt-2">
-				@totalPacketCount packets stored. Use the Packet Explorer to filter, search, and page through individual captures.
-			</MudText>
-		</MudPaper>
 	</MudStack>
 </MudContainer>
 

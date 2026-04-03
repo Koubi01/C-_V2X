@@ -441,3 +441,5 @@ CREATE INDEX IF NOT EXISTS idx_station_profiles_vehicle_category ON station_prof
 CREATE INDEX IF NOT EXISTS idx_station_profiles_supports_secure_comm ON station_profiles(supports_secure_comm);
 CREATE INDEX IF NOT EXISTS idx_station_profiles_last_seen_at ON station_profiles(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_station_profile_message_types_type ON station_profile_message_types(message_type);
+CREATE INDEX IF NOT EXISTS idx_mapem_intersection_generation ON mapem_messages (intersection_id, generation_time);
+CREATE INDEX IF NOT EXISTS idx_packets_pcap_file_id ON packets (pcap_file_name, id);

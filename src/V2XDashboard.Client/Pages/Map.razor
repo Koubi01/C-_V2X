@@ -6,114 +6,95 @@
 
 <PageTitle>Map</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="map-page">
+<MudContainer Style="height: 100%;" MaxWidth="MaxWidth.False" Class="map-page">
     <MudStack Spacing="3">
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudGrid Spacing="2">
-                <MudItem xs="12" lg="8">
-                    <MudText Typo="Typo.h4">V2X Correlation Map</MudText>
-                    <MudText Typo="Typo.body1" Class="mt-1">
-                        Filter live entities and OBU to RSU matches, then inspect the spatial context directly on the rendered map.
-                    </MudText>
-                </MudItem>
-                <MudItem xs="12" lg="4">
-                    <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-summary-chips">
-                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled">Entities: @entityCount</MudChip>
-                        <MudChip T="string" Color="Color.Secondary" Variant="Variant.Filled">Correlations: @correlationCount</MudChip>
-                        <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">Updated: @lastUpdatedLabel</MudChip>
-                    </MudStack>
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
-
         @if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             <MudAlert Severity="Severity.Error" Variant="Variant.Filled">@errorMessage</MudAlert>
-        }
+        }       
 
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudGrid Spacing="2">
-                <MudItem xs="12" md="6" lg="3">
+        <MudPaper Class="panel-card" Elevation="0" Height="30%">            
+            <MudStack Row="true" Spacing="1" Class="map-legend-row">
+                <MudChip T="string" Class="legend-chip legend-chip-cam">CAM</MudChip>
+                <MudChip T="string" Class="legend-chip legend-chip-srem">SREM Request</MudChip>
+                <MudChip T="string" Class="legend-chip legend-chip-denm">DENM Event</MudChip>
+                <MudChip T="string" Class="legend-chip legend-chip-ssem">SSEM Status</MudChip>
+                <MudChip T="string" Class="legend-chip legend-chip-mapem">MAPEM</MudChip>
+                <MudChip T="string" Class="legend-chip legend-chip-spatem">SPATEM</MudChip>
+            </MudStack>
+            <MudGrid Spacing="2"  Justify="Justify.FlexEnd">
+                <MudItem xs="12" md="6" lg="3" >
                     <MudTextField T="string" Label="From" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="fromTimeText" />
                 </MudItem>
                 <MudItem xs="12" md="6" lg="3">
                     <MudTextField T="string" Label="To" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="toTimeText" />
                 </MudItem>
-                <MudItem xs="12" md="6" lg="2">
-                    <MudSelect T="string" Label="Correlation" Variant="Variant.Outlined" @bind-Value="correlationType">
-                        <MudSelectItem T="string" Value="@CorrelationAll">All</MudSelectItem>
-                        <MudSelectItem T="string" Value="@CorrelationStrict">Strict</MudSelectItem>
-                        <MudSelectItem T="string" Value="@CorrelationFallback">Fallback</MudSelectItem>
-                    </MudSelect>
+                <MudItem xs="12" md="6" lg="6" Style="align-self: flex-end;">
+                    <MudText Typo="Typo.subtitle2">Entity Filter</MudText>
+                    <MudStack Row="true" Spacing="2" Class="map-toggle-row">
+                        <MudCheckBox @bind-Value="showObu" Label="OBU" Color="Color.Primary" />
+                        <MudCheckBox @bind-Value="showRsu" Label="RSU" Color="Color.Primary" />
+                        <MudCheckBox @bind-Value="showCorrelations" Label="Correlations" Color="Color.Success" />
+                        <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed" Color="Color.Info" />
+                        <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted" Color="Color.Info" />
+                    </MudStack>
                 </MudItem>
-                <MudItem xs="12" md="6" lg="4">
+                <MudItem xs="12" md="6" lg="6" >
+                    <MudStack>
+                        <MudItem xs="12" md="6" lg="4">
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Vehicle Category</MudText>
+                        <MudStack Row="true" " Class="map-filter-checkbox-row">
+                            @foreach (var category in availableVehicleCategories)
+                            {
+                                <MudCheckBox T="string"
+                                             @key="category"
+                                             Value="category"
+                                             Checked="@selectedVehicleCategories.Contains(category)"
+                                             CheckedChanged="@((bool isChecked) => OnVehicleCategoryToggled(category, isChecked))"
+                                             Label="@category"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                        </MudItem>
+                        <MudItem xs="12" md="6" lg="4">
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Station Type</MudText>
+                        <MudStack Row="true"  Class="map-filter-checkbox-row">
+                            @foreach (var stationType in availableStationTypes)
+                            {
+                                <MudCheckBox T="int"
+                                             @key="stationType"
+                                             Value="stationType"
+                                             Checked="@selectedStationTypes.Contains(stationType)"
+                                             CheckedChanged="@((bool isChecked) => OnStationTypeToggled(stationType, isChecked))"
+                                             Label="@GetStationTypeLabel(stationType)"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                        </MudItem>
+                    </MudStack>
+
+                </MudItem>
+                <MudItem xs="12" md="6" lg="6">
+                    <MudText Typo="Typo.subtitle2">Message Type Filter</MudText>
+                    <MudStack Row="true" Class="map-toggle-row">
+                        <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
+                        <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
+                        <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
+                        <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
+                        <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
+                        <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="12" md="6" lg="4" Style="align-self: flex-end;">
                     <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadDataAsync" Disabled="@isLoading">Apply Filters</MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ApplyClientFiltersAsync" Disabled="@isLoading">Refresh View</MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
                     </MudStack>
-                </MudItem>
-                <MudItem xs="12">
-                    <MudStack Spacing="2">
-                        <MudText Typo="Typo.subtitle2">Entity and Message Filters</MudText>
-                        <MudStack Row="true" Spacing="2" Class="map-toggle-row">
-                            <MudCheckBox @bind-Value="showObu" Label="OBU" Color="Color.Primary" />
-                            <MudCheckBox @bind-Value="showRsu" Label="RSU" Color="Color.Primary" />
-                            <MudCheckBox @bind-Value="showCorrelations" Label="Correlations" Color="Color.Success" />
-                            <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed" Color="Color.Info" />
-                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted" Color="Color.Info" />
-                        </MudStack>
-                        <MudStack Row="true" Spacing="2" Class="map-toggle-row">
-                            <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
-                            <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
-                            <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
-                            <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
-                            <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
-                            <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
-                        </MudStack>
-                        <MudSelect T="string"
-                                   Label="Vehicle Category"
-                                   Variant="Variant.Outlined"
-                                   MultiSelection="true"
-                                   SelectedValues="selectedVehicleCategories"
-                                   SelectedValuesChanged="OnVehicleCategoriesChanged"
-                                   Disabled="@isLoading">
-                            @foreach (var category in availableVehicleCategories)
-                            {
-                                <MudSelectItem T="string" Value="@category">@category</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudSelect T="int"
-                                   Label="Station Type"
-                                   Variant="Variant.Outlined"
-                                   MultiSelection="true"
-                                   SelectedValues="selectedStationTypes"
-                                   SelectedValuesChanged="OnStationTypesChanged"
-                                   Disabled="@isLoading">
-                            @foreach (var stationType in availableStationTypes)
-                            {
-                                <MudSelectItem T="int" Value="@stationType">@GetStationTypeLabel(stationType)</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudText Typo="Typo.caption" Class="drawer-caption">
-                            Secure toggles now filter both the map and paged data grids.
-                        </MudText>
-                    </MudStack>
-                </MudItem>
+                </MudItem>  
             </MudGrid>
-        </MudPaper>
-
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudStack Row="true" Spacing="1" Class="map-legend-row">
-                <MudChip T="string" Class="legend-chip legend-chip-cam">CAM OBU</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-srem">SREM Request</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-denm">DENM Event</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-ssem">SSEM Status</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-mapem">MAPEM RSU</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-spatem">SPATEM RSU</MudChip>
-                <MudChip T="string" Variant="Variant.Outlined" Class="legend-line-chip strict-chip">Strict</MudChip>
-                <MudChip T="string" Variant="Variant.Outlined" Class="legend-line-chip fallback-chip">Fallback</MudChip>
-            </MudStack>
         </MudPaper>
 
         @if (isLoading)
@@ -121,92 +102,13 @@
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
         }
 
-        <MudPaper Class="map-shell" Elevation="0">
+        <MudPaper Class="map-shell" Elevation="0" Height="70%">
             <div id="v2x-map" class="map-canvas"></div>
-        </MudPaper>
-
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
-                <MudText Typo="Typo.h6">Correlation Stream</MudText>
-                <MudText Typo="Typo.caption">Virtualized MudDataGrid backed by Docker DB query results</MudText>
-            </MudStack>
-            <MudDataGrid T="CorrelationDto"
-                         Items="correlationGridItems"
-                         Dense="true"
-                         Hover="true"
-                         Striped="true"
-                         ReadOnly="true"
-                         Virtualize="true"
-                         Height="360px"
-                         Class="mt-3">
-                <Columns>
-                    <PropertyColumn Property="x => x.CorrelationType" Title="Type" />
-                    <PropertyColumn Property="x => x.RequestId" Title="Request" />
-                    <PropertyColumn Property="x => x.ObuStationId" Title="OBU" />
-                    <PropertyColumn Property="x => x.RsuIntersectionId" Title="RSU" />
-                    <TemplateColumn Title="Confidence">
-                        <CellTemplate>@context.Item.MatchConfidence.ToString("0.00")</CellTemplate>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Delta">
-                        <CellTemplate>@(context.Item.TimeDeltaMs.HasValue ? $"{context.Item.TimeDeltaMs} ms" : "n/a")</CellTemplate>
-                    </TemplateColumn>
-                </Columns>
-            </MudDataGrid>
-            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
-                <MudText Typo="Typo.body2">Page @correlationGridPageNumber of @CorrelationGridTotalPages (@correlationGridTotalCount rows)</MudText>
-                <MudStack Row="true" Spacing="1">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || correlationGridPageNumber <= 1)" OnClick="PreviousCorrelationGridPageAsync">Previous</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || correlationGridPageNumber >= CorrelationGridTotalPages)" OnClick="NextCorrelationGridPageAsync">Next</MudButton>
-                </MudStack>
-            </MudStack>
-        </MudPaper>
-
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
-                <MudText Typo="Typo.h6">Map Entities</MudText>
-                <MudText Typo="Typo.caption">Virtualized MudDataGrid with OBU/RSU and message filters</MudText>
-            </MudStack>
-            <MudDataGrid T="MapEntityDto"
-                         Items="entityGridItems"
-                         Dense="true"
-                         Hover="true"
-                         Striped="true"
-                         ReadOnly="true"
-                         Virtualize="true"
-                         Height="360px"
-                         Class="mt-3"
-                         >
-                <Columns>
-                    <PropertyColumn Property="x => x.EntityType" Title="Entity" />
-                    <PropertyColumn Property="x => x.MessageType" Title="Message" />
-                    <PropertyColumn Property="x => x.StationId" Title="Station" />
-                    <PropertyColumn Property="x => x.IntersectionId" Title="Intersection" />
-                    <TemplateColumn Title="Coordinates">
-                        <CellTemplate>@($"{context.Item.Latitude:0.000000}, {context.Item.Longitude:0.000000}")</CellTemplate>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Category">
-                        <CellTemplate>@GetVehicleCategory(context.Item)</CellTemplate>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Time (UTC)">
-                        <CellTemplate>@context.Item.GenerationTime.ToString("yyyy-MM-dd HH:mm:ss")</CellTemplate>
-                    </TemplateColumn>
-                </Columns>
-            </MudDataGrid>
-            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
-                <MudText Typo="Typo.body2">Page @entityGridPageNumber of @EntityGridTotalPages (@entityGridTotalCount rows)</MudText>
-                <MudStack Row="true" Spacing="1">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || entityGridPageNumber <= 1)" OnClick="PreviousEntityGridPageAsync">Previous</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(isLoading || entityGridPageNumber >= EntityGridTotalPages)" OnClick="NextEntityGridPageAsync">Next</MudButton>
-                </MudStack>
-            </MudStack>
         </MudPaper>
     </MudStack>
 </MudContainer>
 
 @code {
-    private const string CorrelationAll = "all";
-    private const string CorrelationStrict = "strict";
-    private const string CorrelationFallback = "fallback";
     private static readonly Dictionary<int, string> StationTypeNames = new()
     {
         [0] = "Unknown",
@@ -245,7 +147,6 @@
     private DateTime? toTimeValue;
     private string? fromTimeText;
     private string? toTimeText;
-    private string correlationType = CorrelationAll;
     private bool showObu = true;
     private bool showRsu = true;
     private bool showCorrelations = true;
@@ -342,7 +243,7 @@
             var secureEncryptedFilter = ResolveSecureEncryptedFilter();
 
             var entitiesUrl = BuildMapEntitiesUrl(fromTime, toTime);
-            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType, secureSignedFilter, secureEncryptedFilter, 2000);
+            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, secureSignedFilter, secureEncryptedFilter, 2000);
 
             allEntities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
             allCorrelations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
@@ -437,7 +338,6 @@
         var url = BuildPagedCorrelationsUrl(
             fromTimeValue,
             toTimeValue,
-            correlationType,
             ResolveSecureSignedFilter(),
             ResolveSecureEncryptedFilter(),
             pageNumber,
@@ -520,16 +420,30 @@
         }
     }
 
-    private Task OnVehicleCategoriesChanged(IEnumerable<string> categories)
+    private async Task OnVehicleCategoryToggled(string category, bool isChecked)
     {
-        selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return ApplyClientFiltersAsync();
+        if (isChecked)
+        {
+            selectedVehicleCategories.Add(category);
+        }
+        else
+        {
+            selectedVehicleCategories.Remove(category);
+        }
+        await ApplyClientFiltersAsync();
     }
 
-    private Task OnStationTypesChanged(IEnumerable<int> stationTypes)
+    private async Task OnStationTypeToggled(int stationType, bool isChecked)
     {
-        selectedStationTypes = stationTypes.ToHashSet();
-        return ApplyClientFiltersAsync();
+        if (isChecked)
+        {
+            selectedStationTypes.Add(stationType);
+        }
+        else
+        {
+            selectedStationTypes.Remove(stationType);
+        }
+        await ApplyClientFiltersAsync();
     }
 
     private bool IsVehicleCategorySelected(MapEntityDto entity)
@@ -685,34 +599,11 @@
             : $"api/map/entities?{string.Join("&", queryParts)}";
     }
 
-    private static string BuildCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType, int limit)
-    {
-        var queryParts = new List<string>();
 
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
-        }
-
-        queryParts.Add($"limit={limit}");
-
-        return $"api/correlations?{string.Join("&", queryParts)}";
-    }
 
     private static string BuildCorrelationsUrl(
         DateTime? fromTime,
         DateTime? toTime,
-        string correlationType,
         bool? isSecureSigned,
         bool? isSecureEncrypted,
         int limit)
@@ -727,11 +618,6 @@
         if (toTime.HasValue)
         {
             queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
         }
 
         if (isSecureSigned.HasValue)
@@ -751,7 +637,6 @@
     private static string BuildPagedCorrelationsUrl(
         DateTime? fromTime,
         DateTime? toTime,
-        string correlationType,
         bool? isSecureSigned,
         bool? isSecureEncrypted,
         int pageNumber,
@@ -771,11 +656,6 @@
         if (toTime.HasValue)
         {
             queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
         }
 
         if (isSecureSigned.HasValue)
