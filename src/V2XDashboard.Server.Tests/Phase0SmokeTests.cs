@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using V2XDashboard.Server;
+using V2XDashboard.Server.Services.MapTile.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Shared;
 using Xunit;
@@ -74,6 +75,48 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
         Assert.NotNull(payload);
         Assert.True(payload!.TotalCount > 0);
         Assert.NotEmpty(payload.Items);
+    }
+
+    [Fact]
+    public async Task TileEndpoint_WithValidRequest_ReturnsProtobufResponse()
+    {
+        var response = await _client.GetAsync("/api/tiles/CAM/0/0/0");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/x-protobuf", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task TileEndpoint_WithInvalidLayer_ReturnsBadRequestValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/tiles/INVALID/0/0/0");
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.Errors.ContainsKey("layer"));
+    }
+
+    [Fact]
+    public async Task TileEndpoint_WithInvalidCoordinates_ReturnsBadRequestValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/tiles/CAM/1/5/0");
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.Errors.ContainsKey("x"));
+    }
+
+    [Fact]
+    public async Task TileEndpoint_WithInvalidDateRange_ReturnsBadRequestValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/tiles/CAM/0/0/0?fromTime=2026-01-02T00:00:00Z&toTime=2026-01-01T00:00:00Z");
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.Errors.ContainsKey("fromTime"));
     }
 
     [Fact]
@@ -163,6 +206,7 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
                 services.AddSingleton<ICorrelationService, FakeCorrelationService>();
                 services.AddSingleton<IStationProfileService, FakeStationProfileService>();
                 services.AddSingleton<IIngestionScheduler, FakeIngestionScheduler>();
+                services.AddSingleton<IMapTileService, FakeMapTileService>();
             });
         }
     }
@@ -450,6 +494,39 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
                 LastSeenAt = DateTime.UtcNow,
                 ObservedMessageTypes = new List<string> { "CAM" }
             };
+        }
+    }
+
+    private sealed class FakeMapTileService : IMapTileService
+    {
+        private static readonly IReadOnlyDictionary<string, int> DefaultGenerations =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                [TileLayerNames.Cam] = 0,
+                [TileLayerNames.Denm] = 0,
+                [TileLayerNames.Mapem] = 0,
+                [TileLayerNames.Spatem] = 0,
+                [TileLayerNames.Srem] = 0,
+                [TileLayerNames.Ssem] = 0,
+                [TileLayerNames.Correlations] = 0
+            };
+
+        public Task<byte[]> GetTileAsync(string layer, int z, int x, int y, TileFilterParams filters, CancellationToken cancellationToken = default)
+            => Task.FromResult(new byte[] { 0x1A, 0x00 });
+
+        public TileCacheDiagnosticsDto GetCacheDiagnostics()
+            => new()
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                LayerGenerations = DefaultGenerations
+            };
+
+        public void InvalidateAllTiles()
+        {
+        }
+
+        public void InvalidateLayer(string layer)
+        {
         }
     }
 }

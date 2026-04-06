@@ -11,9 +11,6 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Add services to the container.
-        // the server hosts the Blazor WebAssembly client so we need
-        // MVC/Razor services and static files support.
         builder.Services.AddAuthorization();
         builder.Services.AddProblemDetails();
         builder.Services.AddControllersWithViews();
@@ -32,7 +29,6 @@ public class Program
             });
         });
 
-        // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
         builder.Services.AddSwaggerGen();
         builder.Services.Configure<IngestionSchedulerOptions>(
             builder.Configuration.GetSection("Ingestion:Scheduler"));
@@ -43,7 +39,6 @@ public class Program
 
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
@@ -56,23 +51,19 @@ public class Program
 
         app.UseExceptionHandler();
 
-        // serve the Blazor client static assets (published into wwwroot during build)
         app.UseBlazorFrameworkFiles();
         app.UseStaticFiles();
 
         app.UseRouting();
         app.UseCors("MapClient");
 
-        //app.UseHttpsRedirection();
-
         app.UseAuthorization();
 
-        // map the API endpoints
         app.MapIngestionEndpoints();
         app.MapPcapQueryEndpoints();
+        app.MapMapTileEndpoints();
         app.MapRazorPages();
 
-        // fallback to index.html to allow client-side routing
         app.MapFallbackToFile("index.html");
 
         app.Run();

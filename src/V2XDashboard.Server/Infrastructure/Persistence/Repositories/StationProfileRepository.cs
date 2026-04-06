@@ -22,7 +22,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
         const string insertProfilesSql = @"
             WITH source AS (
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'OBU'::VARCHAR AS entity_type,
                     station_type,
                     COALESCE(NULLIF(vehicle_role, ''), CAST(station_type AS VARCHAR), 'Unknown') AS vehicle_category,
@@ -36,7 +36,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 UNION ALL
 
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'EVENT'::VARCHAR AS entity_type,
                     COALESCE(station_type, original_station_type) AS station_type,
                     COALESCE(CAST(COALESCE(station_type, original_station_type) AS VARCHAR), 'Unknown') AS vehicle_category,
@@ -50,7 +50,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 UNION ALL
 
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'RSU'::VARCHAR AS entity_type,
                     NULL::INTEGER AS station_type,
                     NULL::VARCHAR AS vehicle_category,
@@ -64,7 +64,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 UNION ALL
 
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'RSU'::VARCHAR AS entity_type,
                     NULL::INTEGER AS station_type,
                     NULL::VARCHAR AS vehicle_category,
@@ -78,7 +78,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 UNION ALL
 
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'OBU'::VARCHAR AS entity_type,
                     CASE
                         WHEN NULLIF(TRIM(vehicle_type), '') ~ '^[0-9]+$'
@@ -100,7 +100,7 @@ public sealed class StationProfileRepository : IStationProfileRepository
                 UNION ALL
 
                 SELECT
-                    station_id,
+                    TRIM(station_id) AS station_id,
                     'RSU'::VARCHAR AS entity_type,
                     NULL::INTEGER AS station_type,
                     NULL::VARCHAR AS vehicle_category,
@@ -144,43 +144,44 @@ public sealed class StationProfileRepository : IStationProfileRepository
 
         const string insertMessageTypesSql = @"
             WITH source AS (
-                SELECT station_id, generation_time, 'CAM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'CAM'::VARCHAR AS message_type
                 FROM cam_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
 
                 UNION ALL
-                SELECT station_id, generation_time, 'DENM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'DENM'::VARCHAR AS message_type
                 FROM denm_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
 
                 UNION ALL
-                SELECT station_id, generation_time, 'MAPEM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'MAPEM'::VARCHAR AS message_type
                 FROM mapem_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
 
                 UNION ALL
-                SELECT station_id, generation_time, 'SPATEM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'SPATEM'::VARCHAR AS message_type
                 FROM spatem_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
 
                 UNION ALL
-                SELECT station_id, generation_time, 'SREM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'SREM'::VARCHAR AS message_type
                 FROM srem_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
 
                 UNION ALL
-                SELECT station_id, generation_time, 'SSEM'::VARCHAR AS message_type
+                SELECT TRIM(station_id) AS station_id, generation_time, 'SSEM'::VARCHAR AS message_type
                 FROM ssem_messages
                 WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''
             )
             INSERT INTO station_profile_message_types (station_id, message_type, first_seen_at, last_seen_at)
             SELECT
-                station_id,
-                message_type,
-                MIN(generation_time) AS first_seen_at,
-                MAX(generation_time) AS last_seen_at
-            FROM source
-            GROUP BY station_id, message_type;";
+                s.station_id,
+                s.message_type,
+                MIN(s.generation_time) AS first_seen_at,
+                MAX(s.generation_time) AS last_seen_at
+            FROM source s
+            INNER JOIN station_profiles sp ON sp.station_id = s.station_id
+            GROUP BY s.station_id, s.message_type;";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();

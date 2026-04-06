@@ -36,3 +36,7 @@ Thumbs.db
 *.pcap
 
 .fake
+
+.venv
+
+.vscode

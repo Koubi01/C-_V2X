@@ -141,7 +141,7 @@ public class V2XMessageDecoder :
             RoadWidth = CmtoM(GetDouble(payloadJson, "roadWidth")),
             SpeedLimit = mapemSpeedScaler(GetDouble(payloadJson, "speedLimit")).ToString(CultureInfo.InvariantCulture),
             MapVersion = GetString(payloadJson, "mapVersion", fallback: "1.0"),
-            PublisherId = GetString(payloadJson, "publisherId") // RSU that published this map
+            PublisherId = GetString(payloadJson, "publisherId")
         };
     }
 
@@ -196,7 +196,7 @@ public class V2XMessageDecoder :
             Phase4ConnectionManeuverAssistId1 = GetSpatemConnectionManeuverAssistId(payloadJson, 4, 1),
             Phase5ConnectionManeuverAssistId0 = GetSpatemConnectionManeuverAssistId(payloadJson, 5, 0),
             Phase5ConnectionManeuverAssistId1 = GetSpatemConnectionManeuverAssistId(payloadJson, 5, 1),
-            PublisherId = GetString(payloadJson, "publisherId") // RSU that published this SPAT
+            PublisherId = GetString(payloadJson, "publisherId")
         };
     }
 
@@ -275,14 +275,12 @@ public class V2XMessageDecoder :
 
     private static string ResolveStationId(Packet packet, JsonDocument? payloadJson)
     {
-        // Priority 1: Use ITS stationId from the payload (the actual station identifier)
         var stationId = GetString(payloadJson, "stationId");
         if (!string.IsNullOrWhiteSpace(stationId))
         {
             return stationId;
         }
 
-        // Fallback 2: Use source MAC address
         if (!string.IsNullOrWhiteSpace(packet.SourceMac))
         {
             return packet.SourceMac;
@@ -536,7 +534,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleAltitude(double value)
     {
-        // Typical CAM altitude values are centimeters in many traces.
         if (Math.Abs(value) > 10000d)
         {
             return value / 100d;
@@ -546,7 +543,6 @@ public class V2XMessageDecoder :
     }
     private static double ScaleHeading(double value)
     {
-        // CAM headingValue is typically 0.1 degrees.
         if (Math.Abs(value) > 360d)
         {
             return value / 10d;
@@ -557,7 +553,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleAcceleration(double value)
     {
-        // CAM longitudinal acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 30d)
         {
             return value / 10d;
@@ -568,7 +563,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleCurvature(double value)
     {
-        // CAM curvature often needs scale reduction from raw integer range.
         if (Math.Abs(value) > 2d)
         {
             return value / 10000d;
@@ -579,7 +573,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleYawRate(double value)
     {
-        // CAM yaw rate is typically 0.01 deg/s.
         if (Math.Abs(value) > 100d)
         {
             return value / 100d;
@@ -590,7 +583,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleLateralAcceleration(double value)
     {
-        // CAM lateral acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 20d)
         {
             return value / 10d;
@@ -601,7 +593,6 @@ public class V2XMessageDecoder :
 
     private static double ScaleVerticalAcceleration(double value)
     {
-        // CAM vertical acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 20d)
         {
             return value / 10d;
@@ -713,7 +704,7 @@ public class V2XMessageDecoder :
         if (speed > 0) 
         {
             double scaler = 3.6*3.6;
-            return Math.Floor(speed / scaler); // Assume km/h and convert to m/s
+            return Math.Floor(speed / scaler);
         }
 
         return speed;

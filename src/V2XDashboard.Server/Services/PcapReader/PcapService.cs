@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
+using V2XDashboard.Server.Services.MapTile.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.TsharkWrapper;
 using V2XDashboard.Shared;
@@ -29,6 +30,7 @@ public class PcapService : IPcapService
     private readonly IPacketRepository _packetRepository;
     private readonly IV2XMessageRepository _v2xMessageRepository;
     private readonly ICorrelationRepository _correlationRepository;
+    private readonly IMapTileService _mapTileService;
     private readonly IMapEntityRepository _mapEntityRepository;
     private readonly IStationProfileRepository _stationProfileRepository;
     private readonly IProcessedFileRepository _processedFileRepository;
@@ -46,6 +48,7 @@ public class PcapService : IPcapService
         IPacketRepository packetRepository,
         IV2XMessageRepository v2XMessageRepository,
         ICorrelationRepository correlationRepository,
+        IMapTileService mapTileService,
         IMapEntityRepository mapEntityRepository,
         IStationProfileRepository stationProfileRepository,
         IProcessedFileRepository processedFileRepository,
@@ -64,6 +67,7 @@ public class PcapService : IPcapService
         _packetRepository = packetRepository;
         _v2xMessageRepository = v2XMessageRepository;
         _correlationRepository = correlationRepository;
+        _mapTileService = mapTileService;
         _mapEntityRepository = mapEntityRepository;
         _stationProfileRepository = stationProfileRepository;
         _processedFileRepository = processedFileRepository;
@@ -104,7 +108,6 @@ public class PcapService : IPcapService
             var totalStopwatch = Stopwatch.StartNew();
             var filePath = Path.Combine(_pcapDataPath, fileName);
 
-            // Check if file exists (in container environment)
             if (!File.Exists(filePath))
             {
                 throw new FileNotFoundException($"PCAP file not found: {filePath}");
@@ -138,7 +141,7 @@ public class PcapService : IPcapService
 
             // Process V2X messages from packets
             var processMessagesStopwatch = Stopwatch.StartNew();
-            await ProcessV2XMessagesAsync(connection, transaction, packets);
+            await ProcessV2XMessagesAsync(connection, transaction, packets, fileName);
             processMessagesStopwatch.Stop();
 
             var processedFileInserted = await _processedFileRepository.TryInsertProcessedFileAsync(
@@ -164,10 +167,14 @@ public class PcapService : IPcapService
             }
 
             await transaction.CommitAsync();
+            _mapTileService.InvalidateAllTiles();
 
             // Run a second pass after the entire file is stored to maximize intersection enrichment.
             var enrichmentStopwatch = Stopwatch.StartNew();
             await PopulateIntersectionMetadataForFileAsync(fileName);
+            _mapTileService.InvalidateLayer(TileLayerNames.Spatem);
+            _mapTileService.InvalidateLayer(TileLayerNames.Srem);
+            _mapTileService.InvalidateLayer(TileLayerNames.Ssem);
             enrichmentStopwatch.Stop();
 
             var stationProfilesStopwatch = Stopwatch.StartNew();
@@ -220,6 +227,27 @@ public class PcapService : IPcapService
                     _logger.LogWarning("Failed to process file {FileName}", file);
                 }
             }
+
+            var globalEnrichmentStopwatch = Stopwatch.StartNew();
+            await PopulateIntersectionMetadataForAllFilesAsync();
+            _mapTileService.InvalidateLayer(TileLayerNames.Spatem);
+            _mapTileService.InvalidateLayer(TileLayerNames.Srem);
+            _mapTileService.InvalidateLayer(TileLayerNames.Ssem);
+            globalEnrichmentStopwatch.Stop();
+
+            _logger.LogInformation(
+                "Global enrichment completed after process-all: files={FileCount}, duration={DurationMs}ms",
+                files.Count,
+                globalEnrichmentStopwatch.ElapsedMilliseconds);
+
+            var correlationStopwatch = Stopwatch.StartNew();
+            await RecordOBUToRSUCorrelationAsync();
+            correlationStopwatch.Stop();
+
+            _logger.LogInformation(
+                "Final correlation pass completed after process-all: files={FileCount}, duration={DurationMs}ms",
+                files.Count,
+                correlationStopwatch.ElapsedMilliseconds);
             
             return allSucceeded;
         }
@@ -270,7 +298,6 @@ public class PcapService : IPcapService
     {
         var allMessages = new List<V2XMessage>();
 
-        // If specific message type requested, query only that table
         if (!string.IsNullOrEmpty(messageType))
         {
             var normalizedMessageType = messageType.Trim().ToUpperInvariant();
@@ -359,7 +386,7 @@ public class PcapService : IPcapService
         await _packetRepository.InsertPacketsAsync(connection, transaction, packets);
     }
 
-    private async Task ProcessV2XMessagesAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets)
+    private async Task ProcessV2XMessagesAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets, string fileName)
     {
         var v2xPackets = packets.Where(p =>
             p.PacketType == "CAM" ||
@@ -377,71 +404,103 @@ public class PcapService : IPcapService
         var sremPackets = v2xPackets.Where(p => p.PacketType == "SREM").ToList();
         var ssemPackets = v2xPackets.Where(p => p.PacketType == "SSEM").ToList();
 
-        if (camPackets.Count > 0) await StoreCAMBatchAsync(connection, transaction, camPackets);
-        if (denmPackets.Count > 0) await StoreDENMBatchAsync(connection, transaction, denmPackets);
-        if (mapemPackets.Count > 0) await StoreMAPEMBatchAsync(connection, transaction, mapemPackets);
-        if (spatemPackets.Count > 0) await StoreSPATEMBatchAsync(connection, transaction, spatemPackets);
-        if (sremPackets.Count > 0) await StoreSREMBatchAsync(connection, transaction, sremPackets);
-        if (ssemPackets.Count > 0) await StoreSSEMBatchAsync(connection, transaction, ssemPackets);
+        if (camPackets.Count > 0) await StoreCAMBatchAsync(connection, transaction, camPackets, fileName);
+        if (denmPackets.Count > 0) await StoreDENMBatchAsync(connection, transaction, denmPackets, fileName);
+        if (mapemPackets.Count > 0) await StoreMAPEMBatchAsync(connection, transaction, mapemPackets, fileName);
+        if (spatemPackets.Count > 0) await StoreSPATEMBatchAsync(connection, transaction, spatemPackets, fileName);
+        if (sremPackets.Count > 0) await StoreSREMBatchAsync(connection, transaction, sremPackets, fileName);
+        if (ssemPackets.Count > 0) await StoreSSEMBatchAsync(connection, transaction, ssemPackets, fileName);
     }
 
-    private async Task StoreCAMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreCAMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _camDecoder.DecodeCAM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "CAM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertCAMBatchAsync(connection, transaction, decoded);
     }
 
-    private async Task StoreDENMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreDENMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _denmDecoder.DecodeDENM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "DENM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertDENMBatchAsync(connection, transaction, decoded);
     }
 
-    private async Task StoreMAPEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreMAPEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _mapemDecoder.DecodeMAPEM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "MAPEM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertMAPEMBatchAsync(connection, transaction, decoded);
     }
 
-    private async Task StoreSPATEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreSPATEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _spatemDecoder.DecodeSPATEM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "SPATEM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertSPATEMBatchAsync(connection, transaction, decoded);
     }
 
-    private async Task StoreSREMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreSREMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _sremDecoder.DecodeSREM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "SREM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertSREMBatchAsync(connection, transaction, decoded);
     }
 
-    private async Task StoreSSEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets)
+    private async Task StoreSSEMBatchAsync(IDbConnection connection, IDbTransaction transaction, List<Packet> packets, string fileName)
     {
         var decoded = packets
             .Select(packet => _ssemDecoder.DecodeSSEM(packet))
             .ToList();
 
+        LogCoordinateQuality(fileName, "SSEM", decoded.Count, decoded.Count(m => HasValidCoordinates(m.Latitude, m.Longitude)));
+
         await _v2xMessageRepository.InsertSSEMBatchAsync(connection, transaction, decoded);
+    }
+
+    private void LogCoordinateQuality(string fileName, string messageType, int totalCount, int nonZeroCount)
+    {
+        _logger.LogInformation(
+            "Decode quality for {FileName}/{MessageType}: nonZeroCoordinates={NonZeroCount}/{TotalCount}",
+            fileName,
+            messageType,
+            nonZeroCount,
+            totalCount);
+    }
+
+    private static bool HasValidCoordinates(double latitude, double longitude)
+    {
+        return latitude != 0d && longitude != 0d;
     }
 
     private async Task PopulateIntersectionMetadataForFileAsync(string fileName)
     {
         await _correlationRepository.PopulateIntersectionMetadataForFileAsync(fileName);
+    }
+
+    private async Task PopulateIntersectionMetadataForAllFilesAsync()
+    {
+        await _correlationRepository.PopulateIntersectionMetadataForAllFilesAsync();
     }
 
     /// <summary>
@@ -463,6 +522,11 @@ public class PcapService : IPcapService
                 summary.InsertedStrict,
                 summary.InsertedFallback,
                 summary.SelectedCandidates - summary.InsertedTotal);
+
+            if (summary.InsertedTotal > 0)
+            {
+                _mapTileService.InvalidateLayer(TileLayerNames.Correlations);
+            }
         }
         catch (Exception ex)
         {

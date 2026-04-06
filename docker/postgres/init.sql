@@ -1,5 +1,8 @@
--- Create database and user (if not already done)
 -- This is handled by docker-compose.yml
+
+-- Create PostGIS extension for spatial queries (CRITICAL for tile generation)
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
 -- Create tables for V2X packet analysis
 
@@ -312,8 +315,6 @@ CREATE INDEX IF NOT EXISTS idx_ssem_generation_time ON ssem_messages(generation_
 CREATE INDEX IF NOT EXISTS idx_ssem_intersection ON ssem_messages(intersection_id);
 CREATE INDEX IF NOT EXISTS idx_ssem_packet_id ON ssem_messages(packet_id);
 
--- NEW: Correlation fields for OBU-RSU linkage and map visualization
-
 -- Add correlation columns to MAPEM table
 ALTER TABLE mapem_messages ADD COLUMN IF NOT EXISTS publisher_id VARCHAR(50);
 
@@ -344,6 +345,10 @@ CREATE TABLE IF NOT EXISTS obu_rsu_correlations (
     request_type VARCHAR(50),
     status_code VARCHAR(50),
     granted_duration INTEGER,
+    srem_latitude DOUBLE PRECISION,
+    srem_longitude DOUBLE PRECISION,
+    ssem_latitude DOUBLE PRECISION,
+    ssem_longitude DOUBLE PRECISION,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -373,6 +378,35 @@ CREATE INDEX IF NOT EXISTS idx_ssem_request_id_ref_generation_time ON ssem_messa
 CREATE INDEX IF NOT EXISTS idx_ssem_intersection_id_generation_time ON ssem_messages(intersection_id, generation_time);
 CREATE INDEX IF NOT EXISTS idx_ssem_request_station_id_ref_generation_time ON ssem_messages(request_station_id_ref, generation_time);
 CREATE INDEX IF NOT EXISTS idx_ssem_intersection_name_lower ON ssem_messages(LOWER(TRIM(intersection_name)));
+
+-- Spatial indexes for vector tile generation at scale
+CREATE INDEX IF NOT EXISTS idx_cam_geom_3857 ON cam_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_denm_geom_3857 ON denm_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_mapem_geom_3857 ON mapem_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_spatem_geom_3857 ON spatem_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_srem_geom_3857 ON srem_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_ssem_geom_3857 ON ssem_messages USING GIST (
+    ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857)
+) WHERE latitude BETWEEN -85 AND 85 AND longitude BETWEEN -180 AND 180;
+CREATE INDEX IF NOT EXISTS idx_correlations_geom_3857 ON obu_rsu_correlations USING GIST (
+    ST_MakeLine(
+        ST_Transform(ST_SetSRID(ST_MakePoint(srem_longitude, srem_latitude), 4326), 3857),
+        ST_Transform(ST_SetSRID(ST_MakePoint(ssem_longitude, ssem_latitude), 4326), 3857)
+    )
+) WHERE srem_latitude BETWEEN -85 AND 85
+    AND srem_longitude BETWEEN -180 AND 180
+    AND ssem_latitude BETWEEN -85 AND 85
+    AND ssem_longitude BETWEEN -180 AND 180;
 
 -- Correlation table indexes
 CREATE INDEX IF NOT EXISTS idx_correlations_request_id ON obu_rsu_correlations(request_id);

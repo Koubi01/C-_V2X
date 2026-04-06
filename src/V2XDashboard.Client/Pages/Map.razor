@@ -6,95 +6,107 @@
 
 <PageTitle>Map</PageTitle>
 
-<MudContainer Style="height: 100%;" MaxWidth="MaxWidth.False" Class="map-page">
+<MudContainer MaxWidth="MaxWidth.False" Class="map-page">
     <MudStack Spacing="3">
         @if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             <MudAlert Severity="Severity.Error" Variant="Variant.Filled">@errorMessage</MudAlert>
-        }       
+        }
 
-        <MudPaper Class="panel-card" Elevation="0" Height="30%">            
-            <MudStack Row="true" Spacing="1" Class="map-legend-row">
-                <MudChip T="string" Class="legend-chip legend-chip-cam">CAM</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-srem">SREM Request</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-denm">DENM Event</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-ssem">SSEM Status</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-mapem">MAPEM</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-spatem">SPATEM</MudChip>
+        <MudPaper Class="panel-card" Elevation="0">
+            <MudStack Spacing="3">
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="map-legend-row">
+                    @foreach (var layer in MessageLayers)
+                    {
+                        <MudChip T="string" Class="@($"legend-chip {layer.ChipClass}")">@layer.Label</MudChip>
+                    }
+                </MudStack>
+
+                @if (selectedLayers.Contains(TrafficIntensityLayerName))
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="map-legend-row">
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-1">SV &lt;= 2,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-2">2,001 - 5,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-3">5,001 - 10,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-4">10,001 - 20,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-5">SV > 20,000</MudChip>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Default">All provided rows included</MudChip>
+                    </MudStack>
+                }
+
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6" lg="3">
+                        <MudTextField T="string" Label="From" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="fromTimeText" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="3">
+                        <MudTextField T="string" Label="To" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="toTimeText" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6" lg="6">
+                        <MudText Typo="Typo.subtitle2">Security Filters</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-toggle-row">
+                            <MudCheckBox @bind-Value="showSecureSigned" Label="Signed" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Encrypted" Color="Color.Info" />
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Visible Layers</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-toggle-row">
+                            @foreach (var layer in MessageLayers)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="layer.Name"
+                                             Value="@selectedLayers.Contains(layer.Name)"
+                                             ValueChanged="@((bool isChecked) => OnLayerToggled(layer.Name, isChecked))"
+                                             Label="@layer.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Station Types</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-filter-checkbox-row">
+                            @foreach (var stationType in StationTypeOptions)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="stationType.Value"
+                                             Value="@selectedStationTypes.Contains(stationType.Value)"
+                                             ValueChanged="@((bool isChecked) => OnStationTypeToggled(stationType.Value, isChecked))"
+                                             Label="@stationType.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Vehicle Roles</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-filter-checkbox-row">
+                            @foreach (var role in VehicleRoleOptions)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="role.Value"
+                                             Value="@selectedVehicleRoleCodes.Contains(role.Value)"
+                                             ValueChanged="@((bool isChecked) => OnVehicleRoleToggled(role.Value, isChecked))"
+                                             Label="@role.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="12" lg="12">
+                        <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFiltersAsync" Disabled="@isLoading">Apply Filters</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetFiltersAsync" Disabled="@isLoading">Reset</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
             </MudStack>
-            <MudGrid Spacing="2"  Justify="Justify.FlexEnd">
-                <MudItem xs="12" md="6" lg="3" >
-                    <MudTextField T="string" Label="From" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="fromTimeText" />
-                </MudItem>
-                <MudItem xs="12" md="6" lg="3">
-                    <MudTextField T="string" Label="To" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="toTimeText" />
-                </MudItem>
-                <MudItem xs="12" md="6" lg="6" Style="align-self: flex-end;">
-                    <MudText Typo="Typo.subtitle2">Entity Filter</MudText>
-                    <MudStack Row="true" Spacing="2" Class="map-toggle-row">
-                        <MudCheckBox @bind-Value="showObu" Label="OBU" Color="Color.Primary" />
-                        <MudCheckBox @bind-Value="showRsu" Label="RSU" Color="Color.Primary" />
-                        <MudCheckBox @bind-Value="showCorrelations" Label="Correlations" Color="Color.Success" />
-                        <MudCheckBox @bind-Value="showSecureSigned" Label="Secure: Signed" Color="Color.Info" />
-                        <MudCheckBox @bind-Value="showSecureEncrypted" Label="Secure: Encrypted" Color="Color.Info" />
-                    </MudStack>
-                </MudItem>
-                <MudItem xs="12" md="6" lg="6" >
-                    <MudStack>
-                        <MudItem xs="12" md="6" lg="4">
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Vehicle Category</MudText>
-                        <MudStack Row="true" " Class="map-filter-checkbox-row">
-                            @foreach (var category in availableVehicleCategories)
-                            {
-                                <MudCheckBox T="string"
-                                             @key="category"
-                                             Value="category"
-                                             Checked="@selectedVehicleCategories.Contains(category)"
-                                             CheckedChanged="@((bool isChecked) => OnVehicleCategoryToggled(category, isChecked))"
-                                             Label="@category"
-                                             Color="Color.Primary"
-                                             Disabled="@isLoading" />
-                            }
-                        </MudStack>
-                        </MudItem>
-                        <MudItem xs="12" md="6" lg="4">
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Station Type</MudText>
-                        <MudStack Row="true"  Class="map-filter-checkbox-row">
-                            @foreach (var stationType in availableStationTypes)
-                            {
-                                <MudCheckBox T="int"
-                                             @key="stationType"
-                                             Value="stationType"
-                                             Checked="@selectedStationTypes.Contains(stationType)"
-                                             CheckedChanged="@((bool isChecked) => OnStationTypeToggled(stationType, isChecked))"
-                                             Label="@GetStationTypeLabel(stationType)"
-                                             Color="Color.Primary"
-                                             Disabled="@isLoading" />
-                            }
-                        </MudStack>
-                        </MudItem>
-                    </MudStack>
-
-                </MudItem>
-                <MudItem xs="12" md="6" lg="6">
-                    <MudText Typo="Typo.subtitle2">Message Type Filter</MudText>
-                    <MudStack Row="true" Class="map-toggle-row">
-                        <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
-                        <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
-                        <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
-                        <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
-                        <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
-                        <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
-                    </MudStack>
-                </MudItem>
-                <MudItem xs="12" md="6" lg="4" Style="align-self: flex-end;">
-                    <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadDataAsync" Disabled="@isLoading">Apply Filters</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ApplyClientFiltersAsync" Disabled="@isLoading">Refresh View</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
-                    </MudStack>
-                </MudItem>  
-            </MudGrid>
         </MudPaper>
 
         @if (isLoading)
@@ -102,88 +114,79 @@
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
         }
 
-        <MudPaper Class="map-shell" Elevation="0" Height="70%">
+        <MudPaper Class="map-shell" Elevation="0">
             <div id="v2x-map" class="map-canvas"></div>
         </MudPaper>
     </MudStack>
 </MudContainer>
 
 @code {
-    private static readonly Dictionary<int, string> StationTypeNames = new()
-    {
-        [0] = "Unknown",
-        [1] = "Pedestrian",
-        [2] = "Cyclist",
-        [3] = "Moped",
-        [4] = "Motorcycle",
-        [5] = "Passenger Car",
-        [6] = "Bus",
-        [7] = "Light Truck",
-        [8] = "Heavy Truck",
-        [9] = "Trailer",
-        [10] = "Special Vehicle",
-        [11] = "Tram",
-        [15] = "RSU"
-    };
+    private const string TrafficIntensityLayerName = "TrafficIntensity";
 
-    private static readonly Dictionary<int, string> VehicleRoleNames = new()
-    {
-        [0] = "0",
-        [1] = "Public Transport",
-        [2] = "Special Transport",
-        [3] = "Dangerous Goods",
-        [4] = "Road Work",
-        [5] = "Rescue",
-        [6] = "Emergency",
-        [7] = "Safety Car",
-        [8] = "Agriculture",
-        [9] = "Commercial",
-        [10] = "Military",
-        [11] = "Road Operator",
-        [12] = "Taxi"
-    };
+    private sealed record LayerOption(string Name, string Label, string ChipClass);
+    private sealed record StationTypeOption(int Value, string Label);
+    private sealed record VehicleRoleOption(string Value, string Label);
+    private sealed record TileFilterPayload(
+        string[] VisibleLayers,
+        string? FromTime,
+        string? ToTime,
+        bool? IsSecureSigned,
+        bool? IsSecureEncrypted,
+        int[] StationTypes,
+        string[] VehicleRoles);
+
+    private static readonly LayerOption[] MessageLayers =
+    [
+        new(TileLayerNames.Cam, "CAM", "legend-chip-cam"),
+        new(TileLayerNames.Denm, "DENM", "legend-chip-denm"),
+        new(TileLayerNames.Mapem, "MAPEM", "legend-chip-mapem"),
+        new(TileLayerNames.Spatem, "SPATEM", "legend-chip-spatem"),
+        new(TileLayerNames.Srem, "SREM", "legend-chip-srem"),
+        new(TileLayerNames.Ssem, "SSEM", "legend-chip-ssem"),
+        new(TileLayerNames.Correlations, "Correlations", "legend-chip-correlations"),
+        new(TrafficIntensityLayerName, "Traffic (SV)", "legend-chip-traffic")
+    ];
+
+    private static readonly StationTypeOption[] StationTypeOptions =
+    [
+        new(0, "0 - Unknown"),
+        new(5, "5 - Passenger Car"),
+        new(6, "6 - Bus"),
+        new(11, "11 - Tram"),
+        new(15, "15 - RSU")
+    ];
+
+    private static readonly VehicleRoleOption[] VehicleRoleOptions =
+    [
+        new("0", "Unknown"),
+        new("1", "Public Transport"),
+        new("5", "Rescue"),
+        new("6", "Emergency"),
+    ];
+
     private bool isInitialized;
-    private DateTime? fromTimeValue;
-    private DateTime? toTimeValue;
+    private bool isLoading;
+    private string? errorMessage;
+    private CancellationTokenSource? diagnosticsPollingCts;
+    private Task? diagnosticsPollingTask;
+    private string? lastDiagnosticsFingerprint;
     private string? fromTimeText;
     private string? toTimeText;
-    private bool showObu = true;
-    private bool showRsu = true;
-    private bool showCorrelations = true;
     private bool showSecureSigned = true;
     private bool showSecureEncrypted = true;
-    private bool showCam = true;
-    private bool showSrem = true;
-    private bool showDenm = true;
-    private bool showSsem = true;
-    private bool showMapem = true;
-    private bool showSpatem = true;
-    private bool isLoading;
-    private int entityCount;
-    private int correlationCount;
-    private int entityGridPageNumber = 1;
-    private const int EntityGridPageSize = 100;
-    private int entityGridTotalCount;
-    private int correlationGridPageNumber = 1;
-    private const int CorrelationGridPageSize = 100;
-    private int correlationGridTotalCount;
-    private DateTime? lastUpdatedUtc;
-    private string? errorMessage;
-    private List<MapEntityDto> allEntities = new();
-    private List<MapEntityDto> mapVisibleEntities = new();
-    private List<MapEntityDto> entityGridItems = new();
-    private List<CorrelationDto> allCorrelations = new();
-    private List<CorrelationDto> mapVisibleCorrelations = new();
-    private List<CorrelationDto> correlationGridItems = new();
-    private List<string> availableVehicleCategories = new();
-    private HashSet<string> selectedVehicleCategories = new(StringComparer.OrdinalIgnoreCase);
-    private List<int> availableStationTypes = new();
-    private HashSet<int> selectedStationTypes = new();
-    private int EntityGridTotalPages => Math.Max(1, (int)Math.Ceiling(entityGridTotalCount / (double)EntityGridPageSize));
-    private int CorrelationGridTotalPages => Math.Max(1, (int)Math.Ceiling(correlationGridTotalCount / (double)CorrelationGridPageSize));
-    private string lastUpdatedLabel => lastUpdatedUtc.HasValue
-        ? lastUpdatedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-        : "never";
+    private HashSet<string> selectedLayers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        TileLayerNames.Cam,
+        TileLayerNames.Denm,
+        TileLayerNames.Mapem,
+        TileLayerNames.Spatem,
+        TileLayerNames.Srem,
+        TileLayerNames.Ssem,
+        TileLayerNames.Correlations,
+        TrafficIntensityLayerName
+    };
+    private HashSet<int> selectedStationTypes = StationTypeOptions.Select(option => option.Value).ToHashSet();
+    private HashSet<string> selectedVehicleRoleCodes = VehicleRoleOptions.Select(option => option.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -202,7 +205,8 @@
                 return;
             }
 
-            await JS.InvokeVoidAsync("v2xMap.initializeMap",
+            await JS.InvokeVoidAsync(
+                "v2xMap.initializeMap",
                 "v2x-map",
                 config.TileStyleUrl,
                 config.DefaultCenterLongitude,
@@ -212,7 +216,8 @@
                 config.MaxZoom);
 
             isInitialized = true;
-            await LoadDataAsync();
+            await ApplyFiltersAsync();
+            StartDiagnosticsPolling();
         }
         catch (Exception ex)
         {
@@ -221,7 +226,7 @@
         }
     }
 
-    private async Task LoadDataAsync()
+    private async Task ApplyFiltersAsync()
     {
         if (!isInitialized)
         {
@@ -234,27 +239,29 @@
 
         try
         {
-            fromTimeValue = ParseLocalDateTime(fromTimeText);
-            toTimeValue = ParseLocalDateTime(toTimeText);
+            var fromTimeValue = ParseLocalDateTime(fromTimeText);
+            var toTimeValue = ParseLocalDateTime(toTimeText);
 
-            var fromTime = fromTimeValue;
-            var toTime = toTimeValue;
-            var secureSignedFilter = ResolveSecureSignedFilter();
-            var secureEncryptedFilter = ResolveSecureEncryptedFilter();
+            if (fromTimeValue.HasValue && toTimeValue.HasValue && fromTimeValue.Value > toTimeValue.Value)
+            {
+                errorMessage = "From time must be earlier than or equal to To time.";
+                return;
+            }
 
-            var entitiesUrl = BuildMapEntitiesUrl(fromTime, toTime);
-            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, secureSignedFilter, secureEncryptedFilter, 2000);
+            var filters = new TileFilterPayload(
+                selectedLayers.OrderBy(layer => layer, StringComparer.OrdinalIgnoreCase).ToArray(),
+                fromTimeValue?.ToString("O"),
+                toTimeValue?.ToString("O"),
+                ResolveSecureSignedFilter(),
+                ResolveSecureEncryptedFilter(),
+                selectedStationTypes.OrderBy(value => value).ToArray(),
+                selectedVehicleRoleCodes.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray());
 
-            allEntities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
-            allCorrelations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
-            RefreshVehicleCategories();
-            RefreshStationTypes();
-            await ApplyClientFiltersAsync();
-            lastUpdatedUtc = DateTime.UtcNow;
+            await JS.InvokeVoidAsync("v2xMap.applyTileFilters", filters);
         }
         catch (Exception ex)
         {
-            errorMessage = $"Failed to load map data: {ex.Message}";
+            errorMessage = $"Failed to apply map filters: {ex.Message}";
         }
         finally
         {
@@ -263,174 +270,30 @@
         }
     }
 
-    private async Task ApplyClientFiltersAsync()
+    private async Task ResetFiltersAsync()
     {
-        if (!isInitialized)
-        {
-            return;
-        }
-
-        var filteredEntities = allEntities
-            .Where(e =>
-                (showObu && string.Equals(e.EntityType, "OBU", StringComparison.OrdinalIgnoreCase)) ||
-                (showRsu && string.Equals(e.EntityType, "RSU", StringComparison.OrdinalIgnoreCase)) ||
-                (showDenm && string.Equals(e.EntityType, "EVENT", StringComparison.OrdinalIgnoreCase)))
-            .Where(e =>
-                (showCam && e.MessageType == "CAM") ||
-                (showSrem && e.MessageType == "SREM") ||
-                (showDenm && e.MessageType == "DENM") ||
-                (showSsem && e.MessageType == "SSEM") ||
-                (showMapem && e.MessageType == "MAPEM") ||
-                (showSpatem && e.MessageType == "SPATEM"))
-            .Where(e => IsVehicleCategorySelected(e))
-            .Where(e => IsStationTypeSelected(e))
-            .Where(e => PassesSecurityFilter(e.IsSecureSigned, e.IsSecureEncrypted))
-            .ToList();
-
-        var filteredCorrelations = showCorrelations
-            ? allCorrelations.Where(c => PassesSecurityFilter(c.IsSecureSigned, c.IsSecureEncrypted)).ToList()
-            : new List<CorrelationDto>();
-
-        mapVisibleEntities = filteredEntities;
-        mapVisibleCorrelations = filteredCorrelations;
-
-        await JS.InvokeVoidAsync("v2xMap.setEntities", mapVisibleEntities);
-        await JS.InvokeVoidAsync("v2xMap.setCorrelations", mapVisibleCorrelations);
-
-        entityCount = mapVisibleEntities.Count;
-        correlationCount = mapVisibleCorrelations.Count;
-
-        await LoadEntityGridPageAsync(1);
-        await LoadCorrelationGridPageAsync(1);
+        selectedLayers = new HashSet<string>(MessageLayers.Select(layer => layer.Name), StringComparer.OrdinalIgnoreCase);
+        selectedStationTypes = StationTypeOptions.Select(option => option.Value).ToHashSet();
+        selectedVehicleRoleCodes = VehicleRoleOptions.Select(option => option.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        showSecureSigned = true;
+        showSecureEncrypted = true;
+        fromTimeText = null;
+        toTimeText = null;
+        await ApplyFiltersAsync();
     }
 
-    private async Task LoadEntityGridPageAsync(int pageNumber)
-    {
-        var url = BuildPagedMapEntitiesUrl(
-            fromTimeValue,
-            toTimeValue,
-            BuildSelectedEntityTypes(),
-            BuildSelectedMessageTypes(),
-            selectedVehicleCategories,
-            selectedStationTypes,
-            ResolveSecureSignedFilter(),
-            ResolveSecureEncryptedFilter(),
-            pageNumber,
-            EntityGridPageSize);
-
-        var pagedResult = await Http.GetFromJsonAsync<PagedResult<MapEntityDto>>(url) ?? new PagedResult<MapEntityDto>();
-
-        entityGridItems = pagedResult.Items.ToList();
-        entityGridPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
-        entityGridTotalCount = pagedResult.TotalCount;
-    }
-
-    private async Task LoadCorrelationGridPageAsync(int pageNumber)
-    {
-        if (!showCorrelations)
-        {
-            correlationGridItems = new List<CorrelationDto>();
-            correlationGridPageNumber = 1;
-            correlationGridTotalCount = 0;
-            return;
-        }
-
-        var url = BuildPagedCorrelationsUrl(
-            fromTimeValue,
-            toTimeValue,
-            ResolveSecureSignedFilter(),
-            ResolveSecureEncryptedFilter(),
-            pageNumber,
-            CorrelationGridPageSize);
-        var pagedResult = await Http.GetFromJsonAsync<PagedResult<CorrelationDto>>(url) ?? new PagedResult<CorrelationDto>();
-
-        correlationGridItems = pagedResult.Items.ToList();
-        correlationGridPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
-        correlationGridTotalCount = pagedResult.TotalCount;
-    }
-
-    private Task PreviousEntityGridPageAsync() => entityGridPageNumber > 1
-        ? LoadEntityGridPageAsync(entityGridPageNumber - 1)
-        : Task.CompletedTask;
-
-    private Task NextEntityGridPageAsync() => entityGridPageNumber < EntityGridTotalPages
-        ? LoadEntityGridPageAsync(entityGridPageNumber + 1)
-        : Task.CompletedTask;
-
-    private Task PreviousCorrelationGridPageAsync() => correlationGridPageNumber > 1
-        ? LoadCorrelationGridPageAsync(correlationGridPageNumber - 1)
-        : Task.CompletedTask;
-
-    private Task NextCorrelationGridPageAsync() => correlationGridPageNumber < CorrelationGridTotalPages
-        ? LoadCorrelationGridPageAsync(correlationGridPageNumber + 1)
-        : Task.CompletedTask;
-
-    private void RefreshVehicleCategories()
-    {
-        var categories = allEntities
-            .Where(static entity => string.Equals(entity.EntityType, "OBU", StringComparison.OrdinalIgnoreCase))
-            .Select(GetVehicleCategory)
-            .Where(static category => !string.IsNullOrWhiteSpace(category))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(static category => category)
-            .ToList();
-
-        availableVehicleCategories = categories;
-
-        if (selectedVehicleCategories.Count == 0)
-        {
-            selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return;
-        }
-
-        selectedVehicleCategories = selectedVehicleCategories
-            .Where(selected => categories.Contains(selected, StringComparer.OrdinalIgnoreCase))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (selectedVehicleCategories.Count == 0)
-        {
-            selectedVehicleCategories = categories.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-    }
-
-    private void RefreshStationTypes()
-    {
-        var stationTypes = allEntities
-            .Where(entity => entity.StationType.HasValue)
-            .Select(entity => entity.StationType!.Value)
-            .Distinct()
-            .OrderBy(value => value)
-            .ToList();
-
-        availableStationTypes = stationTypes;
-
-        if (selectedStationTypes.Count == 0)
-        {
-            selectedStationTypes = stationTypes.ToHashSet();
-            return;
-        }
-
-        selectedStationTypes = selectedStationTypes
-            .Where(selected => stationTypes.Contains(selected))
-            .ToHashSet();
-
-        if (selectedStationTypes.Count == 0)
-        {
-            selectedStationTypes = stationTypes.ToHashSet();
-        }
-    }
-
-    private async Task OnVehicleCategoryToggled(string category, bool isChecked)
+    private async Task OnLayerToggled(string layerName, bool isChecked)
     {
         if (isChecked)
         {
-            selectedVehicleCategories.Add(category);
+            selectedLayers.Add(layerName);
         }
         else
         {
-            selectedVehicleCategories.Remove(category);
+            selectedLayers.Remove(layerName);
         }
-        await ApplyClientFiltersAsync();
+
+        await ApplyFiltersAsync();
     }
 
     private async Task OnStationTypeToggled(int stationType, bool isChecked)
@@ -443,106 +306,42 @@
         {
             selectedStationTypes.Remove(stationType);
         }
-        await ApplyClientFiltersAsync();
+
+        await ApplyFiltersAsync();
     }
 
-    private bool IsVehicleCategorySelected(MapEntityDto entity)
+    private async Task OnVehicleRoleToggled(string roleCode, bool isChecked)
     {
-        if (!string.Equals(entity.EntityType, "OBU", StringComparison.OrdinalIgnoreCase))
+        if (isChecked)
         {
-            return true;
+            selectedVehicleRoleCodes.Add(roleCode);
+        }
+        else
+        {
+            selectedVehicleRoleCodes.Remove(roleCode);
         }
 
-        if (selectedVehicleCategories.Count == 0)
-        {
-            return true;
-        }
-
-        var category = GetVehicleCategory(entity);
-        return selectedVehicleCategories.Contains(category);
+        await ApplyFiltersAsync();
     }
 
-    private bool IsStationTypeSelected(MapEntityDto entity)
+    private bool? ResolveSecureSignedFilter()
     {
-        if (selectedStationTypes.Count == 0)
+        if (showSecureSigned && showSecureEncrypted)
         {
-            return true;
+            return null;
         }
 
-        if (!entity.StationType.HasValue)
-        {
-            return true;
-        }
-
-        return selectedStationTypes.Contains(entity.StationType.Value);
+        return showSecureSigned;
     }
 
-    private static string GetVehicleCategory(MapEntityDto entity)
+    private bool? ResolveSecureEncryptedFilter()
     {
-        if (!string.IsNullOrWhiteSpace(entity.VehicleRole))
+        if (showSecureSigned && showSecureEncrypted)
         {
-            var normalizedRole = entity.VehicleRole.Trim();
-            if (int.TryParse(normalizedRole, out var roleCode))
-            {
-                if (VehicleRoleNames.TryGetValue(roleCode, out var roleName))
-                {
-                    return roleName;
-                }
-
-                return roleCode == 0
-                    ? "Unknown"
-                    : $"Vehicle Role {roleCode}";
-            }
-
-            var loweredRole = normalizedRole.ToLowerInvariant();
-            return loweredRole switch
-            {
-                "publictransport" => "Public Transport",
-                "public_transport" => "Public Transport",
-                "specialtransport" => "Special Transport",
-                "dangerousgoods" => "Dangerous Goods",
-                "roadwork" => "Road Work",
-                "passengercar" => "Passenger Car",
-                "lighttruck" => "Light Truck",
-                "heavytruck" => "Heavy Truck",
-                "roadsideunit" => "RSU",
-                "emergency" => "Emergency Vehicle",
-                _ => ToTitleWords(loweredRole)
-            };
+            return null;
         }
 
-        return entity.StationType.HasValue
-            ? GetStationTypeName(entity.StationType.Value)
-            : "Unknown";
-    }
-
-    private static string GetStationTypeName(int stationTypeCode)
-        => StationTypeNames.TryGetValue(stationTypeCode, out var name)
-            ? name
-            : "Unknown";
-
-    private static string GetStationTypeLabel(int stationTypeCode)
-        => $"{stationTypeCode} - {GetStationTypeName(stationTypeCode)}";
-
-    private static string ToTitleWords(string rawValue)
-    {
-        if (string.IsNullOrWhiteSpace(rawValue))
-        {
-            return "Unknown";
-        }
-
-        var normalized = rawValue
-            .Replace('_', ' ')
-            .Replace('-', ' ');
-
-        var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        for (var index = 0; index < parts.Length; index++)
-        {
-            var part = parts[index];
-            parts[index] = char.ToUpperInvariant(part[0]) + part[1..];
-        }
-
-        return string.Join(' ', parts);
+        return showSecureEncrypted;
     }
 
     private async Task RecordCorrelationsAsync()
@@ -567,7 +366,7 @@
             }
 
             Snackbar.Add("Correlation records rebuilt.", Severity.Success);
-            await LoadDataAsync();
+            await ApplyFiltersAsync();
         }
         catch (Exception ex)
         {
@@ -577,247 +376,6 @@
         {
             isLoading = false;
             StateHasChanged();
-        }
-    }
-
-    private static string BuildMapEntitiesUrl(DateTime? fromTime, DateTime? toTime)
-    {
-        var queryParts = new List<string>();
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        return queryParts.Count == 0
-            ? "api/map/entities"
-            : $"api/map/entities?{string.Join("&", queryParts)}";
-    }
-
-
-
-    private static string BuildCorrelationsUrl(
-        DateTime? fromTime,
-        DateTime? toTime,
-        bool? isSecureSigned,
-        bool? isSecureEncrypted,
-        int limit)
-    {
-        var queryParts = new List<string>();
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (isSecureSigned.HasValue)
-        {
-            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
-        }
-
-        if (isSecureEncrypted.HasValue)
-        {
-            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
-        }
-
-        queryParts.Add($"limit={limit}");
-        return $"api/correlations?{string.Join("&", queryParts)}";
-    }
-
-    private static string BuildPagedCorrelationsUrl(
-        DateTime? fromTime,
-        DateTime? toTime,
-        bool? isSecureSigned,
-        bool? isSecureEncrypted,
-        int pageNumber,
-        int pageSize)
-    {
-        var queryParts = new List<string>
-        {
-            $"pageNumber={pageNumber}",
-            $"pageSize={pageSize}"
-        };
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (isSecureSigned.HasValue)
-        {
-            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
-        }
-
-        if (isSecureEncrypted.HasValue)
-        {
-            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
-        }
-
-        return $"api/correlations/paged?{string.Join("&", queryParts)}";
-    }
-
-    private static string BuildPagedMapEntitiesUrl(
-        DateTime? fromTime,
-        DateTime? toTime,
-        IEnumerable<string> entityTypes,
-        IEnumerable<string> messageTypes,
-        IEnumerable<string> vehicleCategories,
-        IEnumerable<int> stationTypes,
-        bool? isSecureSigned,
-        bool? isSecureEncrypted,
-        int pageNumber,
-        int pageSize)
-    {
-        var queryParts = new List<string>
-        {
-            $"pageNumber={pageNumber}",
-            $"pageSize={pageSize}"
-        };
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        foreach (var entityType in entityTypes)
-        {
-            queryParts.Add($"entityTypes={Uri.EscapeDataString(entityType)}");
-        }
-
-        foreach (var messageType in messageTypes)
-        {
-            queryParts.Add($"messageTypes={Uri.EscapeDataString(messageType)}");
-        }
-
-        foreach (var vehicleCategory in vehicleCategories)
-        {
-            queryParts.Add($"vehicleCategories={Uri.EscapeDataString(vehicleCategory)}");
-        }
-
-        foreach (var stationType in stationTypes)
-        {
-            queryParts.Add($"stationTypes={stationType}");
-        }
-
-        if (isSecureSigned.HasValue)
-        {
-            queryParts.Add($"isSecureSigned={isSecureSigned.Value.ToString().ToLowerInvariant()}");
-        }
-
-        if (isSecureEncrypted.HasValue)
-        {
-            queryParts.Add($"isSecureEncrypted={isSecureEncrypted.Value.ToString().ToLowerInvariant()}");
-        }
-
-        return $"api/map/entities/paged?{string.Join("&", queryParts)}";
-    }
-
-    private bool PassesSecurityFilter(bool isSecureSignedValue, bool isSecureEncryptedValue)
-    {
-        var signedFilter = ResolveSecureSignedFilter();
-        var encryptedFilter = ResolveSecureEncryptedFilter();
-
-        if (signedFilter.HasValue && isSecureSignedValue != signedFilter.Value)
-        {
-            return false;
-        }
-
-        if (encryptedFilter.HasValue && isSecureEncryptedValue != encryptedFilter.Value)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private bool? ResolveSecureSignedFilter()
-    {
-        if (showSecureSigned && showSecureEncrypted)
-        {
-            return null;
-        }
-
-        return showSecureSigned;
-    }
-
-    private bool? ResolveSecureEncryptedFilter()
-    {
-        if (showSecureSigned && showSecureEncrypted)
-        {
-            return null;
-        }
-
-        return showSecureEncrypted;
-    }
-
-    private IEnumerable<string> BuildSelectedEntityTypes()
-    {
-        if (showObu)
-        {
-            yield return "OBU";
-        }
-
-        if (showRsu)
-        {
-            yield return "RSU";
-        }
-
-        if (showDenm)
-        {
-            yield return "EVENT";
-        }
-    }
-
-    private IEnumerable<string> BuildSelectedMessageTypes()
-    {
-        if (showCam)
-        {
-            yield return "CAM";
-        }
-
-        if (showSrem)
-        {
-            yield return "SREM";
-        }
-
-        if (showDenm)
-        {
-            yield return "DENM";
-        }
-
-        if (showSsem)
-        {
-            yield return "SSEM";
-        }
-
-        if (showMapem)
-        {
-            yield return "MAPEM";
-        }
-
-        if (showSpatem)
-        {
-            yield return "SPATEM";
         }
     }
 
@@ -831,15 +389,105 @@
         return DateTime.TryParse(value, out var parsed) ? parsed : null;
     }
 
+    private void StartDiagnosticsPolling()
+    {
+        diagnosticsPollingCts?.Cancel();
+        diagnosticsPollingCts?.Dispose();
+
+        diagnosticsPollingCts = new CancellationTokenSource();
+        diagnosticsPollingTask = PollTileCacheDiagnosticsAsync(diagnosticsPollingCts.Token);
+    }
+
+    private async Task PollTileCacheDiagnosticsAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (!isInitialized || isLoading)
+            {
+                continue;
+            }
+
+            try
+            {
+                var diagnostics = await Http.GetFromJsonAsync<TileCacheDiagnosticsDto>(
+                    "api/tiles/diagnostics/cache",
+                    cancellationToken);
+
+                if (diagnostics?.LayerGenerations is null || diagnostics.LayerGenerations.Count == 0)
+                {
+                    continue;
+                }
+
+                var fingerprint = BuildDiagnosticsFingerprint(diagnostics.LayerGenerations);
+                if (string.IsNullOrWhiteSpace(lastDiagnosticsFingerprint))
+                {
+                    lastDiagnosticsFingerprint = fingerprint;
+                    continue;
+                }
+
+                if (string.Equals(lastDiagnosticsFingerprint, fingerprint, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                lastDiagnosticsFingerprint = fingerprint;
+                await JS.InvokeVoidAsync("v2xMap.forceRefreshTiles");
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Diagnostics endpoint can be disabled outside development/feature-flag scenarios.
+                continue;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Keep polling resilient; map interaction should continue even if diagnostics checks fail.
+            }
+        }
+    }
+
+    private static string BuildDiagnosticsFingerprint(IReadOnlyDictionary<string, int> layerGenerations)
+    {
+        return string.Join(
+            "|",
+            layerGenerations
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(pair => $"{pair.Key}:{pair.Value}"));
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (diagnosticsPollingCts is not null)
+        {
+            await diagnosticsPollingCts.CancelAsync();
+            diagnosticsPollingCts.Dispose();
+            diagnosticsPollingCts = null;
+        }
+
+        if (diagnosticsPollingTask is not null)
+        {
+            try
+            {
+                await diagnosticsPollingTask;
+            }
+            catch
+            {
+            }
+
+            diagnosticsPollingTask = null;
+        }
+
         try
         {
             await JS.InvokeVoidAsync("v2xMap.disposeMap");
         }
         catch
         {
-            // Ignore disposal errors during navigation or app shutdown.
         }
     }
 }

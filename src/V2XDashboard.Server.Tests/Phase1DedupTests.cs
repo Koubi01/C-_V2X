@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
+using V2XDashboard.Server.Services.MapTile.Interfaces;
 using V2XDashboard.Server.Services.PcapReader;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.TsharkWrapper;
@@ -48,6 +49,7 @@ public class Phase1DedupTests
                 packetRepository,
                 new StubV2XMessageRepository(),
                 new StubCorrelationRepository(),
+                new StubMapTileService(),
                 new StubMapEntityRepository(),
                 new StubStationProfileRepository(),
                 processedFileRepository,
@@ -60,6 +62,61 @@ public class Phase1DedupTests
             Assert.Equal(0, tsharkParser.ExtractCalls);
             Assert.Equal(0, packetRepository.InsertCalls);
             Assert.Equal(0, processedFileRepository.TryInsertCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAllPcapFilesAsync_RunsGlobalEnrichmentOnceAfterLoop()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"v2x-phase1-all-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        await File.WriteAllBytesAsync(Path.Combine(tempDir, "a.pcap"), new byte[] { 1, 2, 3 });
+        await File.WriteAllBytesAsync(Path.Combine(tempDir, "b.pcap"), new byte[] { 4, 5, 6 });
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Port=5432;Database=v2x_database;Username=v2x_admin;Password=supertajneheslo",
+                    ["PcapDataPath"] = tempDir
+                })
+                .Build();
+
+            var processedFileRepository = new StubProcessedFileRepository(isAlreadyProcessed: true);
+            var correlationRepository = new CountingCorrelationRepository();
+
+            var service = new PcapService(
+                configuration,
+                new StubCamDecoder(),
+                new StubDenmDecoder(),
+                new StubMapemDecoder(),
+                new StubSpatemDecoder(),
+                new StubSremDecoder(),
+                new StubSsemDecoder(),
+                new CountingTsharkParser(),
+                new CountingPacketRepository(),
+                new StubV2XMessageRepository(),
+                correlationRepository,
+                new StubMapTileService(),
+                new StubMapEntityRepository(),
+                new StubStationProfileRepository(),
+                processedFileRepository,
+                NullLogger<PcapService>.Instance);
+
+            var success = await service.ProcessAllPcapFilesAsync();
+
+            Assert.True(success);
+            Assert.Equal(1, correlationRepository.PopulateAllCalls);
+            Assert.Equal(1, correlationRepository.RecordCorrelationCalls);
         }
         finally
         {
@@ -181,9 +238,62 @@ public class Phase1DedupTests
     private sealed class StubCorrelationRepository : ICorrelationRepository
     {
         public Task PopulateIntersectionMetadataForFileAsync(string fileName) => Task.CompletedTask;
+        public Task PopulateIntersectionMetadataForAllFilesAsync() => Task.CompletedTask;
         public Task<CorrelationRecordSummary> RecordOBUToRSUCorrelationAsync(int timeWindowSeconds) => throw new NotSupportedException();
         public Task<List<CorrelationDto>> GetCorrelationsAsync(string? obuStationId = null, string? rsuIntersectionId = null, string? requestId = null, string? correlationType = null, DateTime? fromTime = null, DateTime? toTime = null, bool? isSecureSigned = null, bool? isSecureEncrypted = null, int? limit = null) => throw new NotSupportedException();
         public Task<PagedResult<CorrelationDto>> GetCorrelationsPagedAsync(string? obuStationId = null, string? rsuIntersectionId = null, string? requestId = null, string? correlationType = null, DateTime? fromTime = null, DateTime? toTime = null, bool? isSecureSigned = null, bool? isSecureEncrypted = null, int pageNumber = 1, int pageSize = 10) => throw new NotSupportedException();
+        public Task<SremSsemMatchDto?> GetSsemForSremAsync(int sremId) => throw new NotSupportedException();
+    }
+
+    private sealed class CountingCorrelationRepository : ICorrelationRepository
+    {
+        public int PopulateAllCalls { get; private set; }
+        public int RecordCorrelationCalls { get; private set; }
+
+        public Task PopulateIntersectionMetadataForFileAsync(string fileName) => Task.CompletedTask;
+
+        public Task PopulateIntersectionMetadataForAllFilesAsync()
+        {
+            PopulateAllCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task<CorrelationRecordSummary> RecordOBUToRSUCorrelationAsync(int timeWindowSeconds)
+        {
+            RecordCorrelationCalls++;
+            return Task.FromResult(new CorrelationRecordSummary
+            {
+                TotalSrems = 0,
+                SelectedCandidates = 0,
+                InsertedTotal = 0,
+                InsertedStrict = 0,
+                InsertedFallback = 0
+            });
+        }
+
+        public Task<List<CorrelationDto>> GetCorrelationsAsync(
+            string? obuStationId = null,
+            string? rsuIntersectionId = null,
+            string? requestId = null,
+            string? correlationType = null,
+            DateTime? fromTime = null,
+            DateTime? toTime = null,
+            bool? isSecureSigned = null,
+            bool? isSecureEncrypted = null,
+            int? limit = null) => throw new NotSupportedException();
+
+        public Task<PagedResult<CorrelationDto>> GetCorrelationsPagedAsync(
+            string? obuStationId = null,
+            string? rsuIntersectionId = null,
+            string? requestId = null,
+            string? correlationType = null,
+            DateTime? fromTime = null,
+            DateTime? toTime = null,
+            bool? isSecureSigned = null,
+            bool? isSecureEncrypted = null,
+            int pageNumber = 1,
+            int pageSize = 10) => throw new NotSupportedException();
+
         public Task<SremSsemMatchDto?> GetSsemForSremAsync(int sremId) => throw new NotSupportedException();
     }
 
@@ -191,6 +301,23 @@ public class Phase1DedupTests
     {
         public Task<List<MapEntityDto>> GetMapEntitiesAsync(DateTime? fromTime = null, DateTime? toTime = null)
             => throw new NotSupportedException();
+    }
+
+    private sealed class StubMapTileService : IMapTileService
+    {
+        public Task<byte[]> GetTileAsync(string layer, int z, int x, int y, TileFilterParams filters, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public TileCacheDiagnosticsDto GetCacheDiagnostics()
+            => throw new NotSupportedException();
+
+        public void InvalidateAllTiles()
+        {
+        }
+
+        public void InvalidateLayer(string layer)
+        {
+        }
     }
 
     private sealed class StubStationProfileRepository : IStationProfileRepository

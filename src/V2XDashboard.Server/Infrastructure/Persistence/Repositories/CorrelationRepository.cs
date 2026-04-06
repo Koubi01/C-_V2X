@@ -25,6 +25,15 @@ public sealed class CorrelationRepository : ICorrelationRepository
         await UpdateSsemIntersectionForFileAsync(connection, fileName);
     }
 
+    public async Task PopulateIntersectionMetadataForAllFilesAsync()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+
+        await UpdateSpatemIntersectionAsync(connection);
+        await UpdateSremIntersectionAsync(connection);
+        await UpdateSsemIntersectionAsync(connection);
+    }
+
     public async Task<CorrelationRecordSummary> RecordOBUToRSUCorrelationAsync(int timeWindowSeconds)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -39,6 +48,10 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         s.request_id AS request_id,
                         s.generation_time AS srem_timestamp,
                         ss.generation_time AS ssem_timestamp,
+                        s.latitude AS srem_latitude,
+                        s.longitude AS srem_longitude,
+                        ss.latitude AS ssem_latitude,
+                        ss.longitude AS ssem_longitude,
                         (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
                         COALESCE(ss.status_code, 'unknown') AS status_code,
                         COALESCE(ss.granted_duration, 0) AS granted_duration,
@@ -62,6 +75,10 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         s.request_id AS request_id,
                         s.generation_time AS srem_timestamp,
                         ss.generation_time AS ssem_timestamp,
+                        s.latitude AS srem_latitude,
+                        s.longitude AS srem_longitude,
+                        ss.latitude AS ssem_latitude,
+                        ss.longitude AS ssem_longitude,
                         (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
                         COALESCE(ss.status_code, 'unknown') AS status_code,
                         COALESCE(ss.granted_duration, 0) AS granted_duration,
@@ -86,6 +103,10 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         s.request_id AS request_id,
                         s.generation_time AS srem_timestamp,
                         ss.generation_time AS ssem_timestamp,
+                        s.latitude AS srem_latitude,
+                        s.longitude AS srem_longitude,
+                        ss.latitude AS ssem_latitude,
+                        ss.longitude AS ssem_longitude,
                         (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
                         COALESCE(ss.status_code, 'unknown') AS status_code,
                         COALESCE(ss.granted_duration, 0) AS granted_duration,
@@ -109,6 +130,10 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         s.request_id AS request_id,
                         s.generation_time AS srem_timestamp,
                         ss.generation_time AS ssem_timestamp,
+                        s.latitude AS srem_latitude,
+                        s.longitude AS srem_longitude,
+                        ss.latitude AS ssem_latitude,
+                        ss.longitude AS ssem_longitude,
                         (EXTRACT(EPOCH FROM (ss.generation_time - s.generation_time)) * 1000)::INT AS time_delta_ms,
                         COALESCE(ss.status_code, 'unknown') AS status_code,
                         COALESCE(ss.granted_duration, 0) AS granted_duration,
@@ -151,7 +176,8 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         srem_id, ssem_id, mapem_id, spatem_id,
                         obu_station_id, rsu_intersection_id, request_id, correlation_type,
                         match_confidence, srem_timestamp, ssem_timestamp, time_delta_ms,
-                        request_type, status_code, granted_duration)
+                        request_type, status_code, granted_duration,
+                        srem_latitude, srem_longitude, ssem_latitude, ssem_longitude)
                     SELECT
                         c.srem_id,
                         c.ssem_id,
@@ -167,7 +193,11 @@ public sealed class CorrelationRepository : ICorrelationRepository
                         c.time_delta_ms,
                         'signal_request',
                         c.status_code,
-                        c.granted_duration
+                        c.granted_duration,
+                        c.srem_latitude,
+                        c.srem_longitude,
+                        c.ssem_latitude,
+                        c.ssem_longitude
                     FROM chosen c
                     WHERE NOT EXISTS (
                         SELECT 1
@@ -188,6 +218,8 @@ public sealed class CorrelationRepository : ICorrelationRepository
         var row = await connection.QuerySingleAsync<CorrelationSummaryRow>(
             correlationQuery,
             new { WindowSeconds = timeWindowSeconds });
+
+        await PopulateCorrelationCoordinatesAsync(connection);
 
         return new CorrelationRecordSummary
         {
@@ -562,6 +594,146 @@ public sealed class CorrelationRepository : ICorrelationRepository
                 );";
 
         return connection.ExecuteAsync(query, new { FileName = fileName });
+    }
+
+    private static Task UpdateSpatemIntersectionAsync(IDbConnection connection)
+    {
+        const string query = @"
+            WITH target AS (
+                SELECT s.id, s.generation_time, s.intersection_id
+                FROM spatem_messages s
+                ),
+                resolved AS (
+                    SELECT
+                    t.id,
+                    m_best.intersection_name,
+                    m_best.latitude,
+                    m_best.longitude
+                    FROM target t
+                    LEFT JOIN LATERAL (
+                    SELECT m.intersection_name, m.latitude, m.longitude
+                    FROM mapem_messages m
+                    WHERE m.intersection_id = t.intersection_id
+                    AND m.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                    AND t.generation_time + INTERVAL '10 minutes'
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - t.generation_time))) ASC
+                    LIMIT 1
+                    ) m_best ON TRUE
+                )
+                UPDATE spatem_messages s
+                SET
+                intersection_name = COALESCE(r.intersection_name, s.intersection_name),
+                latitude = COALESCE(r.latitude, s.latitude),
+                longitude = COALESCE(r.longitude, s.longitude)
+                FROM resolved r
+                WHERE s.id = r.id
+                AND (
+                s.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, s.intersection_name)
+                OR s.latitude IS DISTINCT FROM COALESCE(r.latitude, s.latitude)
+                OR s.longitude IS DISTINCT FROM COALESCE(r.longitude, s.longitude)
+                );";
+
+        return connection.ExecuteAsync(query);
+    }
+
+    private static Task UpdateSremIntersectionAsync(IDbConnection connection)
+    {
+        const string query = @"
+            WITH target AS (
+                SELECT s.id, s.generation_time, s.requestor_id
+                FROM srem_messages s
+                ),
+                resolved AS (
+                SELECT
+                t.id,
+                ss_best.intersection_name,
+                ss_best.intersection_id
+                FROM target t
+                LEFT JOIN LATERAL (
+                SELECT ss.intersection_name, ss.intersection_id
+                FROM ssem_messages ss
+                WHERE ss.request_station_id_ref = t.requestor_id
+                AND ss.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                AND t.generation_time + INTERVAL '10 minutes'
+                ORDER BY ABS(EXTRACT(EPOCH FROM (ss.generation_time - t.generation_time))) ASC
+                LIMIT 1
+                ) ss_best ON TRUE
+                )
+                UPDATE srem_messages s
+                SET
+                intersection_name = COALESCE(r.intersection_name, s.intersection_name),
+                intersection_id = COALESCE(r.intersection_id, s.intersection_id)
+                FROM resolved r
+                WHERE s.id = r.id
+                AND (
+                s.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, s.intersection_name)
+                OR s.intersection_id IS DISTINCT FROM COALESCE(r.intersection_id, s.intersection_id)
+                );";
+
+        return connection.ExecuteAsync(query);
+    }
+
+    private static Task UpdateSsemIntersectionAsync(IDbConnection connection)
+    {
+        const string query = @"
+            WITH target AS (
+                SELECT ss.id, ss.generation_time, ss.intersection_id
+                FROM ssem_messages ss
+                ),
+                resolved AS (
+                SELECT
+                t.id,
+                m_best.intersection_name,
+                m_best.latitude,
+                m_best.longitude
+                FROM target t
+                LEFT JOIN LATERAL (
+                SELECT m.intersection_name, m.latitude, m.longitude
+                FROM mapem_messages m
+                WHERE m.intersection_id = t.intersection_id
+                AND m.generation_time BETWEEN t.generation_time - INTERVAL '10 minutes'
+                AND t.generation_time + INTERVAL '10 minutes'
+                ORDER BY ABS(EXTRACT(EPOCH FROM (m.generation_time - t.generation_time))) ASC
+                LIMIT 1
+                ) m_best ON TRUE
+                )
+                UPDATE ssem_messages ss
+                SET
+                intersection_name = COALESCE(r.intersection_name, ss.intersection_name),
+                latitude = COALESCE(r.latitude, ss.latitude),
+                longitude = COALESCE(r.longitude, ss.longitude)
+                FROM resolved r
+                WHERE ss.id = r.id
+                AND (
+                ss.intersection_name IS DISTINCT FROM COALESCE(r.intersection_name, ss.intersection_name)
+                OR ss.latitude IS DISTINCT FROM COALESCE(r.latitude, ss.latitude)
+                OR ss.longitude IS DISTINCT FROM COALESCE(r.longitude, ss.longitude)
+                );";
+
+        return connection.ExecuteAsync(query);
+    }
+
+    private static Task PopulateCorrelationCoordinatesAsync(IDbConnection connection)
+    {
+        const string query = @"
+            UPDATE obu_rsu_correlations c
+            SET
+                                srem_latitude = COALESCE(NULLIF(c.srem_latitude, 0), NULLIF(s.latitude, 0)),
+                                srem_longitude = COALESCE(NULLIF(c.srem_longitude, 0), NULLIF(s.longitude, 0)),
+                                ssem_latitude = COALESCE(NULLIF(c.ssem_latitude, 0), NULLIF(ss.latitude, 0)),
+                                ssem_longitude = COALESCE(NULLIF(c.ssem_longitude, 0), NULLIF(ss.longitude, 0))
+                        FROM srem_messages s,
+                                 ssem_messages ss
+                        WHERE c.srem_id = s.id
+                            AND c.ssem_id = ss.id
+                            AND (
+                                c.srem_latitude IS NULL OR c.srem_latitude = 0
+                                OR c.srem_longitude IS NULL OR c.srem_longitude = 0
+                                OR c.ssem_latitude IS NULL OR c.ssem_latitude = 0
+                                OR c.ssem_longitude IS NULL OR c.ssem_longitude = 0
+                            );";
+
+        return connection.ExecuteAsync(query);
     }
 
     private static (int PageNumber, int PageSize, int Offset) NormalizePaging(int pageNumber, int pageSize, int maxPageSize = 100)

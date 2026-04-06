@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using V2XDashboard.Server.Infrastructure.Time;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
+using V2XDashboard.Server.Services.MapTile;
+using V2XDashboard.Server.Services.MapTile.Interfaces;
 using V2XDashboard.Server.Services.PcapReader;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
 using V2XDashboard.Server.Services.PcapReader.Scheduling;
@@ -42,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IV2XMessageRepository, V2XMessageRepository>();
         services.AddScoped<ICorrelationRepository, CorrelationRepository>();
         services.AddScoped<IMapEntityRepository, MapEntityRepository>();
+        services.AddSingleton<IMapTileRepository, MapTileRepository>();
         services.AddScoped<IStationProfileRepository, StationProfileRepository>();
         services.AddScoped<IProcessedFileRepository, ProcessedFileRepository>();
         services.AddSingleton<IClock, SystemClock>();
@@ -49,6 +52,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITsharkProcessRunner, TsharkProcessRunner>();
         services.AddSingleton<ITsharkPacketMapper, TsharkPacketMapper>();
         services.AddSingleton<ITsharkParser, TsharkParser>();
+        services.AddSingleton<IMapTileService, MapTileService>();
+        
+        // Add memory cache for tile caching (CRITICAL for vector tile performance)
+        services.AddMemoryCache(options => 
+        {
+            options.SizeLimit = 1000 * 1024 * 1024; // 1000 MiB limit for tile caching
+            options.CompactionPercentage = 0.25;
+        });
+        
         return services;
     }
 }

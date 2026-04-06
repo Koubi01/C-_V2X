@@ -5,6 +5,7 @@ namespace V2XDashboard.Server.Infrastructure.Persistence.Repositories;
 public interface ICorrelationRepository
 {
     Task PopulateIntersectionMetadataForFileAsync(string fileName);
+    Task PopulateIntersectionMetadataForAllFilesAsync();
     Task<CorrelationRecordSummary> RecordOBUToRSUCorrelationAsync(int timeWindowSeconds);
     Task<List<CorrelationDto>> GetCorrelationsAsync(
         string? obuStationId = null,

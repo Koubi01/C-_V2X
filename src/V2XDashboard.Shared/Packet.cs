@@ -8,7 +8,7 @@ public class Packet
     public DateTime Timestamp { get; set; }
     public string SourceMac { get; set; } = string.Empty;
     public string DestinationMac { get; set; } = string.Empty;
-    public string PacketType { get; set; } = string.Empty; // 802.11p, ITS-5G, etc.
+    public string PacketType { get; set; } = string.Empty;
     public int Length { get; set; }
     public int SourcePort { get; set; }
     public int DestinationPort { get; set; }
@@ -17,6 +17,6 @@ public class Packet
     public string SecurityProtocol { get; set; } = string.Empty;
     public string SignerId { get; set; } = string.Empty;
     public string CertificateId { get; set; } = string.Empty;
-    public string Payload { get; set; } = string.Empty; // Hex or base64 encoded
+    public string Payload { get; set; } = string.Empty;
     public string PcapFileName { get; set; } = string.Empty;
 }

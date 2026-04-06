@@ -64,13 +64,6 @@
 			</MudItem>
 			<MudItem xs="12" sm="6" lg="3">
 				<MudPaper Class="metric-card" Elevation="0">
-					<MudText Typo="Typo.overline">Map Entities</MudText>
-					<MudText Typo="Typo.h3">@entityCount</MudText>
-					<MudText Typo="Typo.body2">Objects currently returned for map rendering.</MudText>
-				</MudPaper>
-			</MudItem>
-			<MudItem xs="12" sm="6" lg="3">
-				<MudPaper Class="metric-card" Elevation="0">
 					<MudText Typo="Typo.overline">Correlations</MudText>
 					<MudText Typo="Typo.h3">@correlationCount</MudText>
 					<MudText Typo="Typo.body2">Recent OBU to RSU matches available to review.</MudText>
@@ -129,9 +122,8 @@
 		{
 			var filesTask   = Http.GetFromJsonAsync<List<string>>("api/ingestion/files");
 			var countsTask  = Http.GetFromJsonAsync<MessageCountsDto>("api/messages/counts");
-			var entitiesTask = Http.GetFromJsonAsync<List<MapEntityDto>>("api/map/entities");
 
-			await Task.WhenAll(filesTask, countsTask, entitiesTask);
+			await Task.WhenAll(filesTask, countsTask);
 
 			pcapFiles.Clear();
 			pcapFiles.AddRange((await filesTask) ?? new List<string>());
@@ -139,7 +131,6 @@
 
 			var counts = await countsTask ?? new MessageCountsDto();
 			totalPacketCount  = counts.TotalPackets;
-			entityCount       = (await entitiesTask ?? new List<MapEntityDto>()).Count;
 			correlationCount  = counts.TotalCorrelations;
 
 			messageSummaryRows.Clear();

@@ -80,7 +80,7 @@ public class MAPEM : V2XMessage
     public double RoadWidth { get; set; }
     public string SpeedLimit { get; set; } = string.Empty;
     public string MapVersion { get; set; } = string.Empty;
-    public string? PublisherId { get; set; } // RSU that published this map
+    public string? PublisherId { get; set; } 
 }
 
 // SPATEM (SPaT) - Signal Phase and Timing Message
@@ -96,9 +96,8 @@ public class SPATEM : V2XMessage
     public double Latitude { get; set; }
     public double Longitude { get; set; }
 
-    // Canonical fields kept for compatibility with existing consumers.
     public int CurrentPhase { get; set; }
-    public string PhaseState { get; set; } = string.Empty; // green, yellow, red
+    public string PhaseState { get; set; } = string.Empty; 
     public int ConnectionManeuverAssistId { get; set; }
 
     // Up to 6 phase entries can be extracted from SPATEM.
@@ -129,7 +128,7 @@ public class SPATEM : V2XMessage
     public int Phase5ConnectionManeuverAssistId0 { get; set; }
     public int Phase5ConnectionManeuverAssistId1 { get; set; }
 
-    public string? PublisherId { get; set; } // RSU that published this SPAT
+    public string? PublisherId { get; set; } 
 }
 
 // SREM - Signal Request Extension Message (Vehicle requests control adjustment)
@@ -145,19 +144,19 @@ public class SREM : V2XMessage
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public int RequestedPhase { get; set; }
-    public string VehicleType { get; set; } = string.Empty; // bus, emergency, truck, etc.
+    public string VehicleType { get; set; } = string.Empty;
     public string RequestReason { get; set; } = string.Empty;
-    public string? RequestId { get; set; } // Unique request identifier for correlation
-    public string? RequestorId { get; set; } // OBU station ID that initiated request
-    public string? RequiredAccuracy { get; set; } // Positioning accuracy requirement
+    public string? RequestId { get; set; } 
+    public string? RequestorId { get; set; } 
+    public string? RequiredAccuracy { get; set; } 
     public int InBoundLaneId { get; set; }
     public int OutBoundLaneId { get; set; }
     public double Heading { get; set; }
     public double Speed { get; set; }
     public int TransmissionPower { get; set; }
-    public string RouteNames { get; set; } = string.Empty; // Optional: list of route names for visualization
-    public string TransitSchedule { get; set; } = string.Empty; // Optional: transit schedule info for visualization
-    public string RequestorName { get; set; } = string.Empty; // Optional: human-readable name for requestor (e.g. bus route name)
+    public string RouteNames { get; set; } = string.Empty; 
+    public string TransitSchedule { get; set; } = string.Empty; 
+    public string RequestorName { get; set; } = string.Empty; 
 }
 
 // SSEM - Signal Status Extension Message (Confirmation/status response)
@@ -172,9 +171,9 @@ public class SSEM : V2XMessage
     public double Latitude { get; set; }
     public double Longitude { get; set; }        
     public int IntersectionId { get; set; }    
-    public string StatusCode { get; set; } = string.Empty; // accepted, rejected, granted, etc.
+    public string StatusCode { get; set; } = string.Empty; 
     public int GrantedDuration { get; set; }
-    public string? RequestIdRef { get; set; } // Reference to original SREM requestID for correlation
-    public string? RequestStationIdRef { get; set; } // OBU station ID that initiated the original request    
-    public string? ResponderId { get; set; } // RSU intersection ID that responded
+    public string? RequestIdRef { get; set; } 
+    public string? RequestStationIdRef { get; set; }  
+    public string? ResponderId { get; set; } 
 }
