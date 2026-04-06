@@ -8,73 +8,104 @@
 
 <MudContainer MaxWidth="MaxWidth.False" Class="map-page">
     <MudStack Spacing="3">
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudGrid Spacing="2">
-                <MudItem xs="12" lg="8">
-                    <MudText Typo="Typo.h4">V2X Correlation Map</MudText>
-                    <MudText Typo="Typo.body1" Class="mt-1">
-                        Filter live entities and OBU to RSU matches, then inspect the spatial context directly on the rendered map.
-                    </MudText>
-                </MudItem>
-                <MudItem xs="12" lg="4">
-                    <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-summary-chips">
-                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled">Entities: @entityCount</MudChip>
-                        <MudChip T="string" Color="Color.Secondary" Variant="Variant.Filled">Correlations: @correlationCount</MudChip>
-                        <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">Updated: @lastUpdatedLabel</MudChip>
-                    </MudStack>
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
-
         @if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             <MudAlert Severity="Severity.Error" Variant="Variant.Filled">@errorMessage</MudAlert>
         }
 
         <MudPaper Class="panel-card" Elevation="0">
-            <MudGrid Spacing="2">
-                <MudItem xs="12" md="6" lg="3">
-                    <MudTextField T="string" Label="From" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="fromTimeText" />
-                </MudItem>
-                <MudItem xs="12" md="6" lg="3">
-                    <MudTextField T="string" Label="To" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="toTimeText" />
-                </MudItem>
-                <MudItem xs="12" md="6" lg="2">
-                    <MudSelect T="string" Label="Correlation" Variant="Variant.Outlined" @bind-Value="correlationType">
-                        <MudSelectItem T="string" Value="@CorrelationAll">All</MudSelectItem>
-                        <MudSelectItem T="string" Value="@CorrelationStrict">Strict</MudSelectItem>
-                        <MudSelectItem T="string" Value="@CorrelationFallback">Fallback</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" md="6" lg="4">
-                    <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadDataAsync" Disabled="@isLoading">Apply Filters</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
-                    </MudStack>
-                </MudItem>
-                <MudItem xs="12">
-                    <MudStack Row="true" Spacing="2" Class="map-toggle-row">
-                        <MudCheckBox @bind-Value="showCam" Label="CAM" Color="Color.Success" />
-                        <MudCheckBox @bind-Value="showSrem" Label="SREM" Color="Color.Secondary" />
-                        <MudCheckBox @bind-Value="showDenm" Label="DENM" Color="Color.Error" />
-                        <MudCheckBox @bind-Value="showSsem" Label="SSEM" Color="Color.Warning" />
-                        <MudCheckBox @bind-Value="showMapem" Label="MAPEM" Color="Color.Info" />
-                        <MudCheckBox @bind-Value="showSpatem" Label="SPATEM" Color="Color.Primary" />
-                    </MudStack>
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
+            <MudStack Spacing="3">
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="map-legend-row">
+                    @foreach (var layer in MessageLayers)
+                    {
+                        <MudChip T="string" Class="@($"legend-chip {layer.ChipClass}")">@layer.Label</MudChip>
+                    }
+                </MudStack>
 
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudStack Row="true" Spacing="1" Class="map-legend-row">
-                <MudChip T="string" Class="legend-chip legend-chip-cam">CAM OBU</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-srem">SREM Request</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-denm">DENM Event</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-ssem">SSEM Status</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-mapem">MAPEM RSU</MudChip>
-                <MudChip T="string" Class="legend-chip legend-chip-spatem">SPATEM RSU</MudChip>
-                <MudChip T="string" Variant="Variant.Outlined" Class="legend-line-chip strict-chip">Strict</MudChip>
-                <MudChip T="string" Variant="Variant.Outlined" Class="legend-line-chip fallback-chip">Fallback</MudChip>
+                @if (selectedLayers.Contains(TrafficIntensityLayerName))
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="map-legend-row">
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-1">SV &lt;= 2,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-2">2,001 - 5,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-3">5,001 - 10,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-4">10,001 - 20,000</MudChip>
+                        <MudChip T="string" Class="legend-chip legend-chip-traffic-5">SV > 20,000</MudChip>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Default">All provided rows included</MudChip>
+                    </MudStack>
+                }
+
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6" lg="3">
+                        <MudTextField T="string" Label="From" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="fromTimeText" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="3">
+                        <MudTextField T="string" Label="To" Variant="Variant.Outlined" InputType="InputType.DateTimeLocal" @bind-Value="toTimeText" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6" lg="6">
+                        <MudText Typo="Typo.subtitle2">Security Filters</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-toggle-row">
+                            <MudCheckBox @bind-Value="showSecureSigned" Label="Signed" Color="Color.Info" />
+                            <MudCheckBox @bind-Value="showSecureEncrypted" Label="Encrypted" Color="Color.Info" />
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Visible Layers</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-toggle-row">
+                            @foreach (var layer in MessageLayers)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="layer.Name"
+                                             Value="@selectedLayers.Contains(layer.Name)"
+                                             ValueChanged="@((bool isChecked) => OnLayerToggled(layer.Name, isChecked))"
+                                             Label="@layer.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Station Types</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-filter-checkbox-row">
+                            @foreach (var stationType in StationTypeOptions)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="stationType.Value"
+                                             Value="@selectedStationTypes.Contains(stationType.Value)"
+                                             ValueChanged="@((bool isChecked) => OnStationTypeToggled(stationType.Value, isChecked))"
+                                             Label="@stationType.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="4" lg="4">
+                        <MudText Typo="Typo.subtitle2">Vehicle Roles</MudText>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="map-filter-checkbox-row">
+                            @foreach (var role in VehicleRoleOptions)
+                            {
+                                <MudCheckBox T="bool"
+                                             @key="role.Value"
+                                             Value="@selectedVehicleRoleCodes.Contains(role.Value)"
+                                             ValueChanged="@((bool isChecked) => OnVehicleRoleToggled(role.Value, isChecked))"
+                                             Label="@role.Label"
+                                             Color="Color.Primary"
+                                             Disabled="@isLoading" />
+                            }
+                        </MudStack>
+                    </MudItem>
+
+                    <MudItem xs="12" lg="12">
+                        <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd" Class="map-toolbar-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFiltersAsync" Disabled="@isLoading">Apply Filters</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetFiltersAsync" Disabled="@isLoading">Reset</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" OnClick="RecordCorrelationsAsync" Disabled="@isLoading">Rebuild Correlations</MudButton>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
             </MudStack>
         </MudPaper>
 
@@ -86,72 +117,76 @@
         <MudPaper Class="map-shell" Elevation="0">
             <div id="v2x-map" class="map-canvas"></div>
         </MudPaper>
-
-        <MudPaper Class="panel-card" Elevation="0">
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
-                <MudText Typo="Typo.h6">Latest Correlations</MudText>
-                <MudText Typo="Typo.caption">Paged from server using current filter set</MudText>
-            </MudStack>
-            <MudTable Items="recentCorrelations" Dense="true" Hover="true" Breakpoint="Breakpoint.Md" Class="mt-3">
-                <HeaderContent>
-                    <MudTh>Type</MudTh>
-                    <MudTh>Request</MudTh>
-                    <MudTh>OBU</MudTh>
-                    <MudTh>RSU</MudTh>
-                    <MudTh>Confidence</MudTh>
-                    <MudTh>Delta</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Type">@context.CorrelationType</MudTd>
-                    <MudTd DataLabel="Request">@context.RequestId</MudTd>
-                    <MudTd DataLabel="OBU">@context.ObuStationId</MudTd>
-                    <MudTd DataLabel="RSU">@context.RsuIntersectionId</MudTd>
-                    <MudTd DataLabel="Confidence">@context.MatchConfidence.ToString("0.00")</MudTd>
-                    <MudTd DataLabel="Delta">@(context.TimeDeltaMs.HasValue ? $"{context.TimeDeltaMs} ms" : "n/a")</MudTd>
-                </RowTemplate>
-            </MudTable>
-
-            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="table-pager-row mt-3">
-                <MudText Typo="Typo.body2">Page @correlationPageNumber of @CorrelationTotalPages (@correlationTotalCount correlations)</MudText>
-                <MudStack Row="true" Spacing="1">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="PreviousCorrelationPageAsync" Disabled="@(isLoading || isCorrelationPageLoading || correlationPageNumber <= 1)">Previous</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="NextCorrelationPageAsync" Disabled="@(isLoading || isCorrelationPageLoading || correlationPageNumber >= CorrelationTotalPages)">Next</MudButton>
-                </MudStack>
-            </MudStack>
-        </MudPaper>
     </MudStack>
 </MudContainer>
 
 @code {
-    private const string CorrelationAll = "all";
-    private const string CorrelationStrict = "strict";
-    private const string CorrelationFallback = "fallback";
+    private const string TrafficIntensityLayerName = "TrafficIntensity";
+
+    private sealed record LayerOption(string Name, string Label, string ChipClass);
+    private sealed record StationTypeOption(int Value, string Label);
+    private sealed record VehicleRoleOption(string Value, string Label);
+    private sealed record TileFilterPayload(
+        string[] VisibleLayers,
+        string? FromTime,
+        string? ToTime,
+        bool? IsSecureSigned,
+        bool? IsSecureEncrypted,
+        int[] StationTypes,
+        string[] VehicleRoles);
+
+    private static readonly LayerOption[] MessageLayers =
+    [
+        new(TileLayerNames.Cam, "CAM", "legend-chip-cam"),
+        new(TileLayerNames.Denm, "DENM", "legend-chip-denm"),
+        new(TileLayerNames.Mapem, "MAPEM", "legend-chip-mapem"),
+        new(TileLayerNames.Spatem, "SPATEM", "legend-chip-spatem"),
+        new(TileLayerNames.Srem, "SREM", "legend-chip-srem"),
+        new(TileLayerNames.Ssem, "SSEM", "legend-chip-ssem"),
+        new(TileLayerNames.Correlations, "Correlations", "legend-chip-correlations"),
+        new(TrafficIntensityLayerName, "Traffic (SV)", "legend-chip-traffic")
+    ];
+
+    private static readonly StationTypeOption[] StationTypeOptions =
+    [
+        new(0, "0 - Unknown"),
+        new(5, "5 - Passenger Car"),
+        new(6, "6 - Bus"),
+        new(11, "11 - Tram"),
+        new(15, "15 - RSU")
+    ];
+
+    private static readonly VehicleRoleOption[] VehicleRoleOptions =
+    [
+        new("0", "Unknown"),
+        new("1", "Public Transport"),
+        new("5", "Rescue"),
+        new("6", "Emergency"),
+    ];
+
     private bool isInitialized;
-    private DateTime? fromTimeValue;
-    private DateTime? toTimeValue;
+    private bool isLoading;
+    private string? errorMessage;
+    private CancellationTokenSource? diagnosticsPollingCts;
+    private Task? diagnosticsPollingTask;
+    private string? lastDiagnosticsFingerprint;
     private string? fromTimeText;
     private string? toTimeText;
-    private string correlationType = CorrelationAll;
-    private bool showCam = true;
-    private bool showSrem = true;
-    private bool showDenm = true;
-    private bool showSsem = true;
-    private bool showMapem = true;
-    private bool showSpatem = true;
-    private bool isLoading;
-    private bool isCorrelationPageLoading;
-    private int entityCount;
-    private int correlationCount;
-    private int correlationPageNumber = 1;
-    private const int CorrelationPageSize = 10;
-    private int correlationTotalCount;
-    private DateTime? lastUpdatedUtc;
-    private string? errorMessage;
-    private List<CorrelationDto> recentCorrelations = new();
-    private int CorrelationTotalPages => Math.Max(1, (int)Math.Ceiling(correlationTotalCount / (double)CorrelationPageSize));
-    private string lastUpdatedLabel => lastUpdatedUtc.HasValue
-        ? lastUpdatedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-        : "never";
+    private bool showSecureSigned = true;
+    private bool showSecureEncrypted = true;
+    private HashSet<string> selectedLayers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        TileLayerNames.Cam,
+        TileLayerNames.Denm,
+        TileLayerNames.Mapem,
+        TileLayerNames.Spatem,
+        TileLayerNames.Srem,
+        TileLayerNames.Ssem,
+        TileLayerNames.Correlations,
+        TrafficIntensityLayerName
+    };
+    private HashSet<int> selectedStationTypes = StationTypeOptions.Select(option => option.Value).ToHashSet();
+    private HashSet<string> selectedVehicleRoleCodes = VehicleRoleOptions.Select(option => option.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -162,7 +197,7 @@
 
         try
         {
-            var config = await Http.GetFromJsonAsync<MapConfigDto>("api/pcap/map-config");
+            var config = await Http.GetFromJsonAsync<MapConfigDto>("api/map/config");
             if (config is null)
             {
                 errorMessage = "Map configuration could not be loaded.";
@@ -170,7 +205,8 @@
                 return;
             }
 
-            await JS.InvokeVoidAsync("v2xMap.initializeMap",
+            await JS.InvokeVoidAsync(
+                "v2xMap.initializeMap",
                 "v2x-map",
                 config.TileStyleUrl,
                 config.DefaultCenterLongitude,
@@ -180,7 +216,8 @@
                 config.MaxZoom);
 
             isInitialized = true;
-            await LoadDataAsync();
+            await ApplyFiltersAsync();
+            StartDiagnosticsPolling();
         }
         catch (Exception ex)
         {
@@ -189,7 +226,7 @@
         }
     }
 
-    private async Task LoadDataAsync()
+    private async Task ApplyFiltersAsync()
     {
         if (!isInitialized)
         {
@@ -202,39 +239,29 @@
 
         try
         {
-            fromTimeValue = ParseLocalDateTime(fromTimeText);
-            toTimeValue = ParseLocalDateTime(toTimeText);
+            var fromTimeValue = ParseLocalDateTime(fromTimeText);
+            var toTimeValue = ParseLocalDateTime(toTimeText);
 
-            var fromTime = fromTimeValue;
-            var toTime = toTimeValue;
+            if (fromTimeValue.HasValue && toTimeValue.HasValue && fromTimeValue.Value > toTimeValue.Value)
+            {
+                errorMessage = "From time must be earlier than or equal to To time.";
+                return;
+            }
 
-            var entitiesUrl = BuildMapEntitiesUrl(fromTime, toTime);
-            var correlationsUrl = BuildCorrelationsUrl(fromTime, toTime, correlationType);
+            var filters = new TileFilterPayload(
+                selectedLayers.OrderBy(layer => layer, StringComparer.OrdinalIgnoreCase).ToArray(),
+                fromTimeValue?.ToString("O"),
+                toTimeValue?.ToString("O"),
+                ResolveSecureSignedFilter(),
+                ResolveSecureEncryptedFilter(),
+                selectedStationTypes.OrderBy(value => value).ToArray(),
+                selectedVehicleRoleCodes.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray());
 
-            var entities = await Http.GetFromJsonAsync<List<MapEntityDto>>(entitiesUrl) ?? new List<MapEntityDto>();
-            var correlations = await Http.GetFromJsonAsync<List<CorrelationDto>>(correlationsUrl) ?? new List<CorrelationDto>();
-
-            var filteredEntities = entities
-                .Where(e =>
-                    (showCam && e.MessageType == "CAM") ||
-                    (showSrem && e.MessageType == "SREM") ||
-                    (showDenm && e.MessageType == "DENM") ||
-                    (showSsem && e.MessageType == "SSEM") ||
-                    (showMapem && e.MessageType == "MAPEM") ||
-                    (showSpatem && e.MessageType == "SPATEM"))
-                .ToList();
-
-            await JS.InvokeVoidAsync("v2xMap.setEntities", filteredEntities);
-            await JS.InvokeVoidAsync("v2xMap.setCorrelations", correlations);
-
-            entityCount = filteredEntities.Count;
-            correlationCount = correlations.Count;
-            await LoadCorrelationPageAsync(1);
-            lastUpdatedUtc = DateTime.UtcNow;
+            await JS.InvokeVoidAsync("v2xMap.applyTileFilters", filters);
         }
         catch (Exception ex)
         {
-            errorMessage = $"Failed to load map data: {ex.Message}";
+            errorMessage = $"Failed to apply map filters: {ex.Message}";
         }
         finally
         {
@@ -243,45 +270,78 @@
         }
     }
 
-    private async Task PreviousCorrelationPageAsync()
+    private async Task ResetFiltersAsync()
     {
-        if (correlationPageNumber > 1)
-        {
-            await LoadCorrelationPageAsync(correlationPageNumber - 1);
-        }
+        selectedLayers = new HashSet<string>(MessageLayers.Select(layer => layer.Name), StringComparer.OrdinalIgnoreCase);
+        selectedStationTypes = StationTypeOptions.Select(option => option.Value).ToHashSet();
+        selectedVehicleRoleCodes = VehicleRoleOptions.Select(option => option.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        showSecureSigned = true;
+        showSecureEncrypted = true;
+        fromTimeText = null;
+        toTimeText = null;
+        await ApplyFiltersAsync();
     }
 
-    private async Task NextCorrelationPageAsync()
+    private async Task OnLayerToggled(string layerName, bool isChecked)
     {
-        if (correlationPageNumber < CorrelationTotalPages)
+        if (isChecked)
         {
-            await LoadCorrelationPageAsync(correlationPageNumber + 1);
+            selectedLayers.Add(layerName);
         }
+        else
+        {
+            selectedLayers.Remove(layerName);
+        }
+
+        await ApplyFiltersAsync();
     }
 
-    private async Task LoadCorrelationPageAsync(int pageNumber)
+    private async Task OnStationTypeToggled(int stationType, bool isChecked)
     {
-        isCorrelationPageLoading = true;
+        if (isChecked)
+        {
+            selectedStationTypes.Add(stationType);
+        }
+        else
+        {
+            selectedStationTypes.Remove(stationType);
+        }
 
-        try
-        {
-            var url = BuildPagedCorrelationsUrl(fromTimeValue, toTimeValue, correlationType, pageNumber, CorrelationPageSize);
-            var pagedResult = await Http.GetFromJsonAsync<PagedResult<CorrelationDto>>(url) ?? new PagedResult<CorrelationDto>();
+        await ApplyFiltersAsync();
+    }
 
-            recentCorrelations = pagedResult.Items.ToList();
-            correlationPageNumber = pagedResult.PageNumber <= 0 ? pageNumber : pagedResult.PageNumber;
-            correlationTotalCount = pagedResult.TotalCount;
-            correlationCount = pagedResult.TotalCount;
-        }
-        catch (Exception ex)
+    private async Task OnVehicleRoleToggled(string roleCode, bool isChecked)
+    {
+        if (isChecked)
         {
-            errorMessage = $"Failed to load correlation table: {ex.Message}";
+            selectedVehicleRoleCodes.Add(roleCode);
         }
-        finally
+        else
         {
-            isCorrelationPageLoading = false;
-            StateHasChanged();
+            selectedVehicleRoleCodes.Remove(roleCode);
         }
+
+        await ApplyFiltersAsync();
+    }
+
+    private bool? ResolveSecureSignedFilter()
+    {
+        if (showSecureSigned && showSecureEncrypted)
+        {
+            return null;
+        }
+
+        return showSecureSigned;
+    }
+
+    private bool? ResolveSecureEncryptedFilter()
+    {
+        if (showSecureSigned && showSecureEncrypted)
+        {
+            return null;
+        }
+
+        return showSecureEncrypted;
     }
 
     private async Task RecordCorrelationsAsync()
@@ -297,7 +357,7 @@
 
         try
         {
-            var response = await Http.PostAsync("api/pcap/correlations/record", null);
+            var response = await Http.PostAsync("api/correlations/record", null);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
@@ -306,7 +366,7 @@
             }
 
             Snackbar.Add("Correlation records rebuilt.", Severity.Success);
-            await LoadDataAsync();
+            await ApplyFiltersAsync();
         }
         catch (Exception ex)
         {
@@ -319,75 +379,6 @@
         }
     }
 
-    private static string BuildMapEntitiesUrl(DateTime? fromTime, DateTime? toTime)
-    {
-        var queryParts = new List<string>();
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        return queryParts.Count == 0
-            ? "api/pcap/map-entities"
-            : $"api/pcap/map-entities?{string.Join("&", queryParts)}";
-    }
-
-    private static string BuildCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType)
-    {
-        var queryParts = new List<string>();
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
-        }
-
-        queryParts.Add("limit=1000");
-
-        return $"api/pcap/correlations?{string.Join("&", queryParts)}";
-    }
-
-    private static string BuildPagedCorrelationsUrl(DateTime? fromTime, DateTime? toTime, string correlationType, int pageNumber, int pageSize)
-    {
-        var queryParts = new List<string>
-        {
-            $"pageNumber={pageNumber}",
-            $"pageSize={pageSize}"
-        };
-
-        if (fromTime.HasValue)
-        {
-            queryParts.Add($"fromTime={Uri.EscapeDataString(fromTime.Value.ToString("O"))}");
-        }
-
-        if (toTime.HasValue)
-        {
-            queryParts.Add($"toTime={Uri.EscapeDataString(toTime.Value.ToString("O"))}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(correlationType) && !string.Equals(correlationType, CorrelationAll, StringComparison.OrdinalIgnoreCase))
-        {
-            queryParts.Add($"correlationType={Uri.EscapeDataString(correlationType)}");
-        }
-
-        return $"api/pcap/correlations/paged?{string.Join("&", queryParts)}";
-    }
-
     private static DateTime? ParseLocalDateTime(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -398,15 +389,105 @@
         return DateTime.TryParse(value, out var parsed) ? parsed : null;
     }
 
+    private void StartDiagnosticsPolling()
+    {
+        diagnosticsPollingCts?.Cancel();
+        diagnosticsPollingCts?.Dispose();
+
+        diagnosticsPollingCts = new CancellationTokenSource();
+        diagnosticsPollingTask = PollTileCacheDiagnosticsAsync(diagnosticsPollingCts.Token);
+    }
+
+    private async Task PollTileCacheDiagnosticsAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (!isInitialized || isLoading)
+            {
+                continue;
+            }
+
+            try
+            {
+                var diagnostics = await Http.GetFromJsonAsync<TileCacheDiagnosticsDto>(
+                    "api/tiles/diagnostics/cache",
+                    cancellationToken);
+
+                if (diagnostics?.LayerGenerations is null || diagnostics.LayerGenerations.Count == 0)
+                {
+                    continue;
+                }
+
+                var fingerprint = BuildDiagnosticsFingerprint(diagnostics.LayerGenerations);
+                if (string.IsNullOrWhiteSpace(lastDiagnosticsFingerprint))
+                {
+                    lastDiagnosticsFingerprint = fingerprint;
+                    continue;
+                }
+
+                if (string.Equals(lastDiagnosticsFingerprint, fingerprint, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                lastDiagnosticsFingerprint = fingerprint;
+                await JS.InvokeVoidAsync("v2xMap.forceRefreshTiles");
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Diagnostics endpoint can be disabled outside development/feature-flag scenarios.
+                continue;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Keep polling resilient; map interaction should continue even if diagnostics checks fail.
+            }
+        }
+    }
+
+    private static string BuildDiagnosticsFingerprint(IReadOnlyDictionary<string, int> layerGenerations)
+    {
+        return string.Join(
+            "|",
+            layerGenerations
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(pair => $"{pair.Key}:{pair.Value}"));
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (diagnosticsPollingCts is not null)
+        {
+            await diagnosticsPollingCts.CancelAsync();
+            diagnosticsPollingCts.Dispose();
+            diagnosticsPollingCts = null;
+        }
+
+        if (diagnosticsPollingTask is not null)
+        {
+            try
+            {
+                await diagnosticsPollingTask;
+            }
+            catch
+            {
+            }
+
+            diagnosticsPollingTask = null;
+        }
+
         try
         {
             await JS.InvokeVoidAsync("v2xMap.disposeMap");
         }
         catch
         {
-            // Ignore disposal errors during navigation or app shutdown.
         }
     }
 }

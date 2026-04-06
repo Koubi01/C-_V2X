@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "V2X PostgreSQL",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "v2x_database",
+      "Username": "v2x_admin",
+      "SSLMode": "prefer"
+    }
+  }
+}

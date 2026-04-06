@@ -29,3 +29,13 @@ public class MessageCountsDto
     public int SSEM { get; set; }
     public int TotalCorrelations { get; set; }
 }
+
+public class SecurityMetadataSummaryDto
+{
+    public int TotalPackets { get; set; }
+    public int SignedPackets { get; set; }
+    public int EncryptedPackets { get; set; }
+    public int SecurePackets { get; set; }
+    public int DistinctSigners { get; set; }
+    public int DistinctCertificates { get; set; }
+}

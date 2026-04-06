@@ -15,6 +15,8 @@ public class MapEntityDto
     public DateTime GenerationTime { get; set; }
     public string? VehicleRole { get; set; }
     public int? StationType { get; set; }
+    public bool IsSecureSigned { get; set; }
+    public bool IsSecureEncrypted { get; set; }
 }
 
 public class CorrelationDto
@@ -37,6 +39,8 @@ public class CorrelationDto
     public double? SremLongitude { get; set; }
     public double? SsemLatitude { get; set; }
     public double? SsemLongitude { get; set; }
+    public bool IsSecureSigned { get; set; }
+    public bool IsSecureEncrypted { get; set; }
 }
 
 public class SremSsemMatchDto

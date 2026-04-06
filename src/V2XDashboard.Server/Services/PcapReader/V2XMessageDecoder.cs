@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using V2XDashboard.Server.Services.PcapReader.Interfaces;
@@ -6,8 +7,17 @@ using V2XDashboard.Shared;
 
 namespace V2XDashboard.Server.Services.PcapReader;
 
-public class V2XMessageDecoder : IV2XMessageDecoder
+public class V2XMessageDecoder :
+    IV2XMessageDecoder,
+    ICamDecoder,
+    IDenmDecoder,
+    IMapemDecoder,
+    ISpatemDecoder,
+    ISremDecoder,
+    ISsemDecoder
 {
+    private static readonly ConditionalWeakTable<JsonDocument, Dictionary<string, JsonElement>> PropertyIndexCache = new();
+
     public CAM DecodeCAM(Packet packet)
     {
         using var payloadJson = TryParsePayloadJson(packet.Payload);
@@ -44,6 +54,11 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
             StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             Latitude = latitude,
             Longitude = longitude,
             Altitude = altitude,
@@ -79,6 +94,11 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
             StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             CauseCode = GetString(payloadJson, "causeCode", fallback: "unknown"),
             DetectionTime = GetDateTime(payloadJson, "detectionTime", packet.Timestamp),
             ReferenceTime = GetDateTime(payloadJson, "referenceTime", packet.Timestamp),
@@ -108,15 +128,20 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
             StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             IntersectionId = GetInt(payloadJson, "intersectionId"),
             IntersectionName = GetString(payloadJson, "intersectionName"),
             Latitude = latitude,
             Longitude = longitude,
             LaneCount = GetInt(payloadJson, "laneCount"),
             RoadWidth = CmtoM(GetDouble(payloadJson, "roadWidth")),
-            SpeedLimit = mapemSpeedScaler(Double.Parse(GetString(payloadJson, "speedLimit"))).ToString(CultureInfo.InvariantCulture),
+            SpeedLimit = mapemSpeedScaler(GetDouble(payloadJson, "speedLimit")).ToString(CultureInfo.InvariantCulture),
             MapVersion = GetString(payloadJson, "mapVersion", fallback: "1.0"),
-            PublisherId = GetString(payloadJson, "publisherId") // RSU that published this map
+            PublisherId = GetString(payloadJson, "publisherId")
         };
     }
 
@@ -135,6 +160,11 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
             StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             IntersectionId = GetInt(payloadJson, "intersectionId"),
             IntersectionName = GetString(payloadJson, "intersectionName"),
             Latitude = latitude,
@@ -166,7 +196,7 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             Phase4ConnectionManeuverAssistId1 = GetSpatemConnectionManeuverAssistId(payloadJson, 4, 1),
             Phase5ConnectionManeuverAssistId0 = GetSpatemConnectionManeuverAssistId(payloadJson, 5, 0),
             Phase5ConnectionManeuverAssistId1 = GetSpatemConnectionManeuverAssistId(payloadJson, 5, 1),
-            PublisherId = GetString(payloadJson, "publisherId") // RSU that published this SPAT
+            PublisherId = GetString(payloadJson, "publisherId")
         };
     }
 
@@ -185,6 +215,11 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
             StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             IntersectionName = GetString(payloadJson, "intersectionName"),
             IntersectionId = GetInt(payloadJson, "intersectionId"),
             Latitude = latitude,
@@ -200,8 +235,8 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             Heading = ScaleHeading(GetDouble(payloadJson, "heading")),
             Speed = mapemSpeedScaler(GetDouble(payloadJson, "tasSpeed")),
             TransmissionPower = GetInt(payloadJson, "transmissionPower"),
-            routeNames = GetString(payloadJson, "routeNames"),
-            transitSchedule = GetString(payloadJson, "transitSchedule"),
+            RouteNames = GetString(payloadJson, "routeNames"),
+            TransitSchedule = GetString(payloadJson, "transitSchedule"),
             RequestorName = GetString(payloadJson, "requestorName")
         };
     }
@@ -220,7 +255,12 @@ public class V2XMessageDecoder : IV2XMessageDecoder
         {
             PacketId = packet.Id,
             GenerationTime = packet.Timestamp,
-            StationId = ResolveStationId(packet, payloadJson), 
+            StationId = ResolveStationId(packet, payloadJson),
+            IsSecureSigned = packet.IsSecureSigned,
+            IsSecureEncrypted = packet.IsSecureEncrypted,
+            SecurityProtocol = packet.SecurityProtocol,
+            SignerId = packet.SignerId,
+            CertificateId = packet.CertificateId,
             IntersectionName = GetString(payloadJson, "intersectionName"),
             Latitude = latitude,
             Longitude = longitude,
@@ -235,14 +275,12 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static string ResolveStationId(Packet packet, JsonDocument? payloadJson)
     {
-        // Priority 1: Use ITS stationId from the payload (the actual station identifier)
         var stationId = GetString(payloadJson, "stationId");
         if (!string.IsNullOrWhiteSpace(stationId))
         {
             return stationId;
         }
 
-        // Fallback 2: Use source MAC address
         if (!string.IsNullOrWhiteSpace(packet.SourceMac))
         {
             return packet.SourceMac;
@@ -496,7 +534,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleAltitude(double value)
     {
-        // Typical CAM altitude values are centimeters in many traces.
         if (Math.Abs(value) > 10000d)
         {
             return value / 100d;
@@ -506,7 +543,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
     }
     private static double ScaleHeading(double value)
     {
-        // CAM headingValue is typically 0.1 degrees.
         if (Math.Abs(value) > 360d)
         {
             return value / 10d;
@@ -517,7 +553,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleAcceleration(double value)
     {
-        // CAM longitudinal acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 30d)
         {
             return value / 10d;
@@ -528,7 +563,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleCurvature(double value)
     {
-        // CAM curvature often needs scale reduction from raw integer range.
         if (Math.Abs(value) > 2d)
         {
             return value / 10000d;
@@ -539,7 +573,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleYawRate(double value)
     {
-        // CAM yaw rate is typically 0.01 deg/s.
         if (Math.Abs(value) > 100d)
         {
             return value / 100d;
@@ -550,7 +583,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleLateralAcceleration(double value)
     {
-        // CAM lateral acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 20d)
         {
             return value / 10d;
@@ -561,7 +593,6 @@ public class V2XMessageDecoder : IV2XMessageDecoder
 
     private static double ScaleVerticalAcceleration(double value)
     {
-        // CAM vertical acceleration is typically 0.1 m/s^2.
         if (Math.Abs(value) > 20d)
         {
             return value / 10d;
@@ -614,40 +645,49 @@ public class V2XMessageDecoder : IV2XMessageDecoder
             return false;
         }
 
-        return TryFindPropertyRecursive(payloadJson.RootElement, key, out value);
+        var propertyIndex = PropertyIndexCache.GetValue(payloadJson, static doc =>
+        {
+            var index = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+            IndexPayloadProperties(doc.RootElement, index, null);
+            return index;
+        });
+
+        return propertyIndex.TryGetValue(key, out value);
     }
 
-    private static bool TryFindPropertyRecursive(JsonElement element, string key, out JsonElement value)
+    private static void IndexPayloadProperties(
+        JsonElement element,
+        Dictionary<string, JsonElement> index,
+        string? pathPrefix)
     {
-        value = default;
-
         if (element.ValueKind == JsonValueKind.Object)
         {
-            if (element.TryGetProperty(key, out value))
-            {
-                return true;
-            }
-
             foreach (var property in element.EnumerateObject())
             {
-                if (TryFindPropertyRecursive(property.Value, key, out value))
+                if (!index.ContainsKey(property.Name))
                 {
-                    return true;
+                    index[property.Name] = property.Value;
                 }
+
+                var qualifiedName = string.IsNullOrEmpty(pathPrefix)
+                    ? property.Name
+                    : $"{pathPrefix}.{property.Name}";
+
+                if (!index.ContainsKey(qualifiedName))
+                {
+                    index[qualifiedName] = property.Value;
+                }
+
+                IndexPayloadProperties(property.Value, index, qualifiedName);
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in element.EnumerateArray())
             {
-                if (TryFindPropertyRecursive(item, key, out value))
-                {
-                    return true;
-                }
+                IndexPayloadProperties(item, index, pathPrefix);
             }
         }
-
-        return false;
     }
     private static double CmtoM(double value)
     {
@@ -664,7 +704,7 @@ public class V2XMessageDecoder : IV2XMessageDecoder
         if (speed > 0) 
         {
             double scaler = 3.6*3.6;
-            return Math.Floor(speed / scaler); // Assume km/h and convert to m/s
+            return Math.Floor(speed / scaler);
         }
 
         return speed;

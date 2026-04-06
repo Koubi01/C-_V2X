@@ -63,8 +63,7 @@ h1:focus {
 .dashboard-hero {
     padding: 1.75rem;
     border-radius: 24px;
-    background: linear-gradient(135deg, #0f172a 0%, #134e4a 100%);
-    color: #f8fafc;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
 .hero-kicker {
@@ -80,7 +79,6 @@ h1:focus {
 .hero-actions {
     padding: 1rem;
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(10px);
 }
 
@@ -105,7 +103,7 @@ h1:focus {
     padding: 0.85rem 1rem;
     border-radius: 14px;
     background: #f8fafc;
-    color: #0f172a;
+    color: #ffffff;
 }
 
 .map-summary-chips,
@@ -141,6 +139,32 @@ h1:focus {
 
 .legend-chip-spatem {
     background: #f59e0b;
+}
+
+.legend-chip-traffic {
+    background: #1f2937;
+}
+
+.legend-chip-traffic-1 {
+    background: #fde68a;
+    color: #1f2937;
+}
+
+.legend-chip-traffic-2 {
+    background: #fbbf24;
+    color: #111827;
+}
+
+.legend-chip-traffic-3 {
+    background: #fb923c;
+}
+
+.legend-chip-traffic-4 {
+    background: #f97316;
+}
+
+.legend-chip-traffic-5 {
+    background: #b91c1c;
 }
 
 .strict-chip {
@@ -233,7 +257,6 @@ code {
 .map-canvas {
     width: 100%;
     height: 72vh;
-    min-height: 420px;
 }
 
 @media (max-width: 768px) {
@@ -262,4 +285,76 @@ code {
     align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem;
+}
+
+.v2x-map-popup .maplibregl-popup-content {
+    padding: 5px 7px 7px;
+    border-radius: 10px;
+}
+
+.v2x-map-popup .maplibregl-popup-content,
+.map-popup {
+    width: auto;
+}
+
+.map-popup {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.28rem;
+}
+
+.popup-title {
+    margin-bottom: 0.05rem;
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.popup-group {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 8px;
+    padding: 0.22rem 0.3rem;
+    background: #f8fafc;
+}
+
+.popup-group-title {
+    text-transform: uppercase;
+    color: #334155;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.1rem;
+}
+
+.popup-row {
+    display: grid;
+    grid-template-columns: minmax(78px, 38%) 1fr;
+    column-gap: 0.28rem;
+    align-items: start;
+    padding: 0.04rem 0;
+}
+
+.popup-label {
+    color: #64748b;
+    font-size: 0.61rem;
+    line-height: 1.1;
+}
+
+.popup-value {
+    color: #1e293b;
+    font-size: 0.63rem;
+    line-height: 1.1;
+    word-break: break-word;
+}
+
+@media (max-width: 768px) {
+    .v2x-map-popup .maplibregl-popup-content,
+    .map-popup {
+        min-width: 210px;
+    }
+
+    .popup-row {
+        grid-template-columns: minmax(72px, 36%) 1fr;
+    }
 }
