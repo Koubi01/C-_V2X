@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
@@ -65,6 +66,7 @@ public sealed class PcapServiceCacheInvalidationTests
 
         return new PcapService(
             configuration,
+            new MemoryCache(new MemoryCacheOptions()),
             new StubCamDecoder(),
             new StubDenmDecoder(),
             new StubMapemDecoder(),
@@ -202,6 +204,7 @@ public sealed class PcapServiceCacheInvalidationTests
         public Task InsertSSEMBatchAsync(IDbConnection connection, IDbTransaction transaction, IReadOnlyList<SSEM> messages) => Task.CompletedTask;
         public Task<PagedResult<MessageListItemDto>> GetMessageListPagedAsync(string messageType, int pageNumber = 1, int pageSize = 25) => throw new NotSupportedException();
         public Task<MessageCountsDto> GetMessageCountsAsync() => throw new NotSupportedException();
+        public Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync() => Task.FromResult(new DistinctVehicleWindowStatsDto());
         public Task<List<CAM>> GetCAMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<DENM>> GetDENMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null) => throw new NotSupportedException();

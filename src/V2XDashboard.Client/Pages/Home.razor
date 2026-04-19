@@ -69,6 +69,14 @@
 					<MudText Typo="Typo.body2">Recent OBU to RSU matches available to review.</MudText>
 				</MudPaper>
 			</MudItem>
+			<MudItem xs="12" sm="6" lg="3">
+				<MudPaper Class="metric-card" Elevation="0">
+					<MudText Typo="Typo.overline">Vehicle Presence (15m)</MudText>
+					<MudText Typo="Typo.h3">@distinctVehicleWindowCount</MudText>
+					<MudText Typo="Typo.body2">Distinct StationId counts per 15-minute window.</MudText>
+					<MudText Typo="Typo.caption" Class="d-block mt-1">@vehicleWindowSummaryText</MudText>
+				</MudPaper>
+			</MudItem>
 		</MudGrid>
 
 		<MudGrid Spacing="2">
@@ -102,9 +110,10 @@
 	private readonly List<string> pcapFiles = new();
 	private bool isLoading;
 	private bool isBusy;
-	private int entityCount;
 	private int correlationCount;
 	private int totalPacketCount;
+	private int distinctVehicleWindowCount;
+	private string vehicleWindowSummaryText = "No windows available yet.";
 	private string? selectedFile;
 	private string? errorMessage;
 
@@ -122,8 +131,9 @@
 		{
 			var filesTask   = Http.GetFromJsonAsync<List<string>>("api/ingestion/files");
 			var countsTask  = Http.GetFromJsonAsync<MessageCountsDto>("api/messages/counts");
+			var vehiclesTask = Http.GetFromJsonAsync<DistinctVehicleWindowStatsDto>("api/messages/vehicles/distinct-station-windows");
 
-			await Task.WhenAll(filesTask, countsTask);
+			await Task.WhenAll(filesTask, countsTask, vehiclesTask);
 
 			pcapFiles.Clear();
 			pcapFiles.AddRange((await filesTask) ?? new List<string>());
@@ -132,6 +142,10 @@
 			var counts = await countsTask ?? new MessageCountsDto();
 			totalPacketCount  = counts.TotalPackets;
 			correlationCount  = counts.TotalCorrelations;
+
+			var vehicles = await vehiclesTask ?? new DistinctVehicleWindowStatsDto();
+			distinctVehicleWindowCount = vehicles.TotalDistinctVehicleWindows;
+			vehicleWindowSummaryText = BuildVehicleWindowSummary(vehicles);
 
 			messageSummaryRows.Clear();
 			messageSummaryRows.Add(new MessageSummaryRow("CAM",    counts.CAM,    Color.Success,   "Cooperative awareness from OBUs."));
@@ -213,6 +227,17 @@
 		{
 			isBusy = false;
 		}
+	}
+
+	private static string BuildVehicleWindowSummary(DistinctVehicleWindowStatsDto stats)
+	{
+		if (stats.Buckets.Count == 0)
+		{
+			return "No windows available yet.";
+		}
+
+		var latest = stats.Buckets[0];
+		return $"{stats.Buckets.Count} windows tracked, latest bucket: {latest.BucketStart:g} ({latest.DistinctVehicles} vehicles).";
 	}
 
 	private sealed record MessageSummaryRow(string Name, int Count, Color Color, string Description);
