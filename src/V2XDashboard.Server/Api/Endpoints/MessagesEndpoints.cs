@@ -47,6 +47,12 @@ public static class MessagesEndpoints
             return Results.Ok(counts);
         });
 
+        group.MapGet("/vehicles/distinct-station-windows", async (IV2XMessageQueryService messageQueryService) =>
+        {
+            var stats = await messageQueryService.GetDistinctVehicleWindowStatsAsync();
+            return Results.Ok(stats);
+        });
+
         group.MapGet("/paged", async (IV2XMessageQueryService messageQueryService, string messageType = "CAM", int pageNumber = 1, int pageSize = 25) =>
         {
             var messageTypeValidation = ValidateMessageType(messageType);

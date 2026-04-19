@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using V2XDashboard.Server.Infrastructure.Persistence.Repositories;
 using V2XDashboard.Server.Services.MapTile.Interfaces;
@@ -18,8 +19,12 @@ namespace V2XDashboard.Server.Services.PcapReader;
 
 public class PcapService : IPcapService
 {
+    private const string DistinctVehicleWindowStatsCacheKey = "v2x:stats:distinct-vehicle-window";
+    private static readonly TimeSpan DistinctVehicleWindowStatsCacheTtl = TimeSpan.FromMinutes(10);
+
     private readonly string _connectionString;
     private readonly string _pcapDataPath;
+    private readonly IMemoryCache _memoryCache;
     private readonly ITsharkParser _tsharkWrapper;
     private readonly ICamDecoder _camDecoder;
     private readonly IDenmDecoder _denmDecoder;
@@ -38,6 +43,7 @@ public class PcapService : IPcapService
 
     public PcapService(
         IConfiguration configuration,
+        IMemoryCache memoryCache,
         ICamDecoder camDecoder,
         IDenmDecoder denmDecoder,
         IMapemDecoder mapemDecoder,
@@ -57,6 +63,7 @@ public class PcapService : IPcapService
         _connectionString = configuration.GetConnectionString("DefaultConnection") ??
             throw new ArgumentNullException("DefaultConnection connection string not found");
         _pcapDataPath = configuration.GetValue<string>("PcapDataPath") ?? "/app/PcapData";
+        _memoryCache = memoryCache;
         _tsharkWrapper = tsharkParser;
         _camDecoder = camDecoder;
         _denmDecoder = denmDecoder;
@@ -144,6 +151,19 @@ public class PcapService : IPcapService
             await ProcessV2XMessagesAsync(connection, transaction, packets, fileName);
             processMessagesStopwatch.Stop();
 
+            var containsV2XMessages = packets.Any(static p =>
+                p.PacketType == "CAM" ||
+                p.PacketType == "DENM" ||
+                p.PacketType == "MAPEM" ||
+                p.PacketType == "SPATEM" ||
+                p.PacketType == "SREM" ||
+                p.PacketType == "SSEM");
+
+            if (containsV2XMessages)
+            {
+                InvalidateDistinctVehicleWindowStatsCache();
+            }
+
             var processedFileInserted = await _processedFileRepository.TryInsertProcessedFileAsync(
                 connection,
                 transaction,
@@ -167,6 +187,12 @@ public class PcapService : IPcapService
             }
 
             await transaction.CommitAsync();
+
+            if (containsV2XMessages)
+            {
+                await WarmDistinctVehicleWindowStatsCacheAsync();
+            }
+
             _mapTileService.InvalidateAllTiles();
 
             // Run a second pass after the entire file is stored to maximize intersection enrichment.
@@ -294,6 +320,17 @@ public class PcapService : IPcapService
         return await _v2xMessageRepository.GetMessageCountsAsync();
     }
 
+    public async Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync()
+    {
+        if (_memoryCache.TryGetValue(DistinctVehicleWindowStatsCacheKey, out DistinctVehicleWindowStatsDto? cachedStats)
+            && cachedStats is not null)
+        {
+            return cachedStats;
+        }
+
+        return await RefreshDistinctVehicleWindowStatsCacheAsync();
+    }
+
     public async Task<List<V2XMessage>> GetV2XMessagesAsync(string? messageType = null, int? limit = null)
     {
         var allMessages = new List<V2XMessage>();
@@ -379,6 +416,37 @@ public class PcapService : IPcapService
     public async Task<V2XMessage?> GetV2XMessageByIdAsync(int id, string? messageType = null)
     {
         return await _v2xMessageRepository.GetV2XMessageByIdAsync(id, messageType);
+    }
+
+    private async Task<DistinctVehicleWindowStatsDto> RefreshDistinctVehicleWindowStatsCacheAsync()
+    {
+        var stats = await _v2xMessageRepository.GetDistinctVehicleWindowStatsAsync();
+
+        var cacheOptions = new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = DistinctVehicleWindowStatsCacheTtl,
+            Size = 32 * 1024
+        };
+
+        _memoryCache.Set(DistinctVehicleWindowStatsCacheKey, stats, cacheOptions);
+        return stats;
+    }
+
+    private void InvalidateDistinctVehicleWindowStatsCache()
+    {
+        _memoryCache.Remove(DistinctVehicleWindowStatsCacheKey);
+    }
+
+    private async Task WarmDistinctVehicleWindowStatsCacheAsync()
+    {
+        try
+        {
+            await RefreshDistinctVehicleWindowStatsCacheAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Distinct vehicle-window stats cache warmup failed.");
+        }
     }
 
     private async Task StorePacketsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, List<Packet> packets)

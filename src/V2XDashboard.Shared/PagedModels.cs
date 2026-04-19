@@ -39,3 +39,16 @@ public class SecurityMetadataSummaryDto
     public int DistinctSigners { get; set; }
     public int DistinctCertificates { get; set; }
 }
+
+public class DistinctVehicleWindowBucketDto
+{
+    public DateTime BucketStart { get; set; }
+    public int DistinctVehicles { get; set; }
+}
+
+public class DistinctVehicleWindowStatsDto
+{
+    public int WindowMinutes { get; set; } = 15;
+    public int TotalDistinctVehicleWindows { get; set; }
+    public IReadOnlyList<DistinctVehicleWindowBucketDto> Buckets { get; set; } = Array.Empty<DistinctVehicleWindowBucketDto>();
+}

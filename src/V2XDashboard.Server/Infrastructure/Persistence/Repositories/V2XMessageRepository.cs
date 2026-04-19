@@ -538,6 +538,63 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
         };
     }
 
+    public async Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync()
+    {
+        const string dedupCte = """
+            WITH all_messages AS (
+                SELECT station_id, generation_time FROM cam_messages
+                UNION ALL
+                SELECT station_id, generation_time FROM denm_messages
+                UNION ALL
+                SELECT station_id, generation_time FROM mapem_messages
+                UNION ALL
+                SELECT station_id, generation_time FROM spatem_messages
+                UNION ALL
+                SELECT station_id, generation_time FROM srem_messages
+                UNION ALL
+                SELECT station_id, generation_time FROM ssem_messages
+            ),
+            normalized AS (
+                SELECT
+                    TRIM(station_id) AS station_id,
+                    generation_time
+                FROM all_messages
+                WHERE generation_time IS NOT NULL
+                  AND station_id IS NOT NULL
+                  AND NULLIF(TRIM(station_id), '') IS NOT NULL
+            ),
+            deduplicated AS (
+                SELECT DISTINCT
+                    station_id,
+                    date_trunc('hour', generation_time)
+                    + (((extract(minute FROM generation_time)::int / 15) * 15) * interval '1 minute') AS bucket_start
+                FROM normalized
+            )
+            """;
+
+        var totalSql = dedupCte + "SELECT COUNT(*) FROM deduplicated;";
+        var bucketsSql = dedupCte + """
+            SELECT
+                bucket_start AS BucketStart,
+                COUNT(*)::int AS DistinctVehicles
+            FROM deduplicated
+            GROUP BY bucket_start
+            ORDER BY bucket_start DESC;
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+
+        var totalDistinctVehicleWindows = await connection.ExecuteScalarAsync<int>(totalSql);
+        var buckets = (await connection.QueryAsync<DistinctVehicleWindowBucketDto>(bucketsSql)).ToList();
+
+        return new DistinctVehicleWindowStatsDto
+        {
+            WindowMinutes = 15,
+            TotalDistinctVehicleWindows = totalDistinctVehicleWindows,
+            Buckets = buckets
+        };
+    }
+
     public Task<List<CAM>> GetCAMMessagesAsync(int? limit = null) => GetMessagesAsync<CAM>("cam_messages", limit);
     public Task<List<DENM>> GetDENMMessagesAsync(int? limit = null) => GetMessagesAsync<DENM>("denm_messages", limit);
     public Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null) => GetMessagesAsync<MAPEM>("mapem_messages", limit);

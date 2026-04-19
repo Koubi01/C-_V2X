@@ -267,6 +267,17 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
         public Task<MessageCountsDto> GetMessageCountsAsync()
             => Task.FromResult(new MessageCountsDto { TotalPackets = 1, CAM = 1, TotalCorrelations = 1 });
 
+        public Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync()
+            => Task.FromResult(new DistinctVehicleWindowStatsDto
+            {
+                WindowMinutes = 15,
+                TotalDistinctVehicleWindows = 1,
+                Buckets = new List<DistinctVehicleWindowBucketDto>
+                {
+                    new() { BucketStart = DateTime.UtcNow, DistinctVehicles = 1 }
+                }
+            });
+
         public Task<List<CAM>> GetCAMMessagesAsync(int? limit = null)
             => Task.FromResult(new List<CAM> { BuildCam() });
 
