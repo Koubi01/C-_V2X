@@ -595,6 +595,46 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
         };
     }
 
+    public async Task<MapVehicleFilterSummaryDto> GetMapVehicleFilterSummaryAsync(MapVehicleSummaryQueryParams filters)
+    {
+        var normalizedFilters = NormalizeMapVehicleSummaryFilters(filters);
+        if (!normalizedFilters.IncludeCam && !normalizedFilters.IncludeDenm)
+        {
+            return new MapVehicleFilterSummaryDto
+            {
+                DistinctVehicleCount = 0,
+                Scope = normalizedFilters.Scope,
+                StationTypeShares = Array.Empty<StationTypeShareDto>()
+            };
+        }
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        var sql = BuildMapVehicleSummarySql(normalizedFilters);
+        var parameters = BuildMapVehicleSummaryParameters(normalizedFilters);
+        using var reader = await connection.QueryMultipleAsync(sql, parameters);
+
+        var distinctVehicleCount = await reader.ReadSingleAsync<int>();
+        var stationTypeRows = (await reader.ReadAsync<StationTypeCountRow>()).ToList();
+
+        var stationTypeShares = stationTypeRows
+            .Select(row => new StationTypeShareDto
+            {
+                StationType = row.StationType,
+                DistinctVehicles = row.DistinctVehicles,
+                Percentage = distinctVehicleCount == 0
+                    ? 0
+                    : Math.Round(row.DistinctVehicles * 100d / distinctVehicleCount, 2)
+            })
+            .ToList();
+
+        return new MapVehicleFilterSummaryDto
+        {
+            DistinctVehicleCount = distinctVehicleCount,
+            Scope = normalizedFilters.Scope,
+            StationTypeShares = stationTypeShares
+        };
+    }
+
     public Task<List<CAM>> GetCAMMessagesAsync(int? limit = null) => GetMessagesAsync<CAM>("cam_messages", limit);
     public Task<List<DENM>> GetDENMMessagesAsync(int? limit = null) => GetMessagesAsync<DENM>("denm_messages", limit);
     public Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null) => GetMessagesAsync<MAPEM>("mapem_messages", limit);
@@ -701,6 +741,212 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
         return messages.ToList();
     }
 
+    private static NormalizedMapVehicleSummaryFilters NormalizeMapVehicleSummaryFilters(MapVehicleSummaryQueryParams? filters)
+    {
+        var normalizedLayers = (filters?.VisibleLayers ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var includeCam = filters?.VisibleLayers is null || normalizedLayers.Contains(TileLayerNames.Cam);
+        var includeDenm = filters?.VisibleLayers is null || normalizedLayers.Contains(TileLayerNames.Denm);
+
+        var stationTypes = filters?.StationTypes?
+            .Distinct()
+            .OrderBy(static value => value)
+            .ToArray();
+
+        if (stationTypes is { Length: 0 })
+        {
+            stationTypes = null;
+        }
+
+        var vehicleRoles = filters?.VehicleRoles?
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => role.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static role => role, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (vehicleRoles is { Length: 0 })
+        {
+            vehicleRoles = null;
+        }
+
+        var hasBounds = filters?.MinLatitude.HasValue == true
+            && filters.MaxLatitude.HasValue
+            && filters.MinLongitude.HasValue
+            && filters.MaxLongitude.HasValue;
+
+        var hasTile = filters?.TileZ.HasValue == true
+            && filters.TileX.HasValue
+            && filters.TileY.HasValue;
+
+        var scope = hasBounds
+            ? "Viewport"
+            : hasTile
+                ? "Tile"
+                : "Global";
+
+        return new NormalizedMapVehicleSummaryFilters(
+            IncludeCam: includeCam,
+            IncludeDenm: includeDenm,
+            FromTime: filters?.FromTime,
+            ToTime: filters?.ToTime,
+            IsSecureSigned: filters?.IsSecureSigned,
+            IsSecureEncrypted: filters?.IsSecureEncrypted,
+            StationTypes: stationTypes,
+            VehicleRoles: vehicleRoles,
+            MinLatitude: hasBounds ? filters!.MinLatitude : null,
+            MaxLatitude: hasBounds ? filters!.MaxLatitude : null,
+            MinLongitude: hasBounds ? filters!.MinLongitude : null,
+            MaxLongitude: hasBounds ? filters!.MaxLongitude : null,
+            TileZ: hasTile ? filters!.TileZ : null,
+            TileX: hasTile ? filters!.TileX : null,
+            TileY: hasTile ? filters!.TileY : null,
+            Scope: scope);
+    }
+
+    private static string BuildMapVehicleSummarySql(NormalizedMapVehicleSummaryFilters filters)
+    {
+        var sourceQueries = new List<string>();
+
+        if (filters.IncludeCam)
+        {
+            sourceQueries.Add(BuildCamVehicleSummarySourceSql());
+        }
+
+        if (filters.IncludeDenm)
+        {
+            sourceQueries.Add(BuildDenmVehicleSummarySourceSql());
+        }
+
+        var unionSql = string.Join("\n                UNION ALL\n", sourceQueries);
+        var commonCte = $"""
+            WITH spatial_scope AS (
+                SELECT
+                    CASE
+                        WHEN @UseBounds::boolean THEN ST_Transform(ST_MakeEnvelope(@MinLongitude::double precision, @MinLatitude::double precision, @MaxLongitude::double precision, @MaxLatitude::double precision, 4326), 3857)
+                        WHEN @UseTile::boolean THEN ST_TileEnvelope(@TileZ::integer, @TileX::integer, @TileY::integer)
+                        ELSE NULL
+                    END AS geom
+            ),
+            filtered_rows AS (
+                {unionSql}
+            ),
+            ranked_rows AS (
+                SELECT
+                    station_id,
+                    station_type,
+                    generation_time,
+                    ROW_NUMBER() OVER (PARTITION BY station_id ORDER BY generation_time DESC) AS rn
+                FROM filtered_rows
+            ),
+            latest_per_station AS (
+                SELECT station_id, station_type
+                FROM ranked_rows
+                WHERE rn = 1
+            )
+            """;
+
+        return $"""
+            {commonCte}
+            SELECT COUNT(*)::int
+            FROM latest_per_station;
+
+            {commonCte}
+            SELECT
+                station_type AS StationType,
+                COUNT(*)::int AS DistinctVehicles
+            FROM latest_per_station
+            WHERE station_type IS NOT NULL
+            GROUP BY station_type
+            ORDER BY station_type;
+            """;
+    }
+
+    private static string BuildCamVehicleSummarySourceSql()
+    {
+        return """
+            SELECT
+                TRIM(station_id) AS station_id,
+                station_type,
+                generation_time
+            FROM cam_messages
+            CROSS JOIN spatial_scope
+            WHERE station_id IS NOT NULL
+              AND NULLIF(TRIM(station_id), '') IS NOT NULL
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND latitude BETWEEN -85 AND 85
+              AND longitude BETWEEN -180 AND 180
+              AND (@FromTime::timestamp IS NULL OR generation_time >= @FromTime::timestamp)
+              AND (@ToTime::timestamp IS NULL OR generation_time <= @ToTime::timestamp)
+              AND (@IsSecureSigned::boolean IS NULL OR is_secure_signed = @IsSecureSigned::boolean)
+              AND (@IsSecureEncrypted::boolean IS NULL OR is_secure_encrypted = @IsSecureEncrypted::boolean)
+              AND (@StationTypes::integer[] IS NULL OR station_type = ANY(@StationTypes::integer[]))
+              AND (@VehicleRoles::text[] IS NULL OR vehicle_role = ANY(@VehicleRoles::text[]))
+              AND (
+                  spatial_scope.geom IS NULL
+                  OR ST_Intersects(
+                      ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857),
+                      spatial_scope.geom
+                  )
+              )
+            """;
+    }
+
+    private static string BuildDenmVehicleSummarySourceSql()
+    {
+        return """
+            SELECT
+                TRIM(station_id) AS station_id,
+                station_type,
+                generation_time
+            FROM denm_messages
+            CROSS JOIN spatial_scope
+            WHERE station_id IS NOT NULL
+              AND NULLIF(TRIM(station_id), '') IS NOT NULL
+              AND latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND latitude BETWEEN -85 AND 85
+              AND longitude BETWEEN -180 AND 180
+              AND (@FromTime::timestamp IS NULL OR generation_time >= @FromTime::timestamp)
+              AND (@ToTime::timestamp IS NULL OR generation_time <= @ToTime::timestamp)
+              AND (@IsSecureSigned::boolean IS NULL OR is_secure_signed = @IsSecureSigned::boolean)
+              AND (@IsSecureEncrypted::boolean IS NULL OR is_secure_encrypted = @IsSecureEncrypted::boolean)
+              AND (@StationTypes::integer[] IS NULL OR station_type = ANY(@StationTypes::integer[]))
+              AND (
+                  spatial_scope.geom IS NULL
+                  OR ST_Intersects(
+                      ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 3857),
+                      spatial_scope.geom
+                  )
+              )
+            """;
+    }
+
+    private static DynamicParameters BuildMapVehicleSummaryParameters(NormalizedMapVehicleSummaryFilters filters)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("FromTime", filters.FromTime);
+        parameters.Add("ToTime", filters.ToTime);
+        parameters.Add("IsSecureSigned", filters.IsSecureSigned);
+        parameters.Add("IsSecureEncrypted", filters.IsSecureEncrypted);
+        parameters.Add("StationTypes", filters.StationTypes);
+        parameters.Add("VehicleRoles", filters.VehicleRoles);
+        parameters.Add("UseBounds", filters.MinLatitude.HasValue && filters.MaxLatitude.HasValue && filters.MinLongitude.HasValue && filters.MaxLongitude.HasValue);
+        parameters.Add("MinLatitude", filters.MinLatitude);
+        parameters.Add("MaxLatitude", filters.MaxLatitude);
+        parameters.Add("MinLongitude", filters.MinLongitude);
+        parameters.Add("MaxLongitude", filters.MaxLongitude);
+        parameters.Add("UseTile", filters.TileZ.HasValue && filters.TileX.HasValue && filters.TileY.HasValue);
+        parameters.Add("TileZ", filters.TileZ);
+        parameters.Add("TileX", filters.TileX);
+        parameters.Add("TileY", filters.TileY);
+        return parameters;
+    }
+
     private static (int PageNumber, int PageSize, int Offset) NormalizePaging(int pageNumber, int pageSize, int maxPageSize = 100)
     {
         var safePageNumber = pageNumber < 1 ? 1 : pageNumber;
@@ -708,4 +954,29 @@ public sealed class V2XMessageRepository : IV2XMessageRepository
         var offset = (safePageNumber - 1) * safePageSize;
         return (safePageNumber, safePageSize, offset);
     }
+
+    private sealed class StationTypeCountRow
+    {
+        public int StationType { get; set; }
+
+        public int DistinctVehicles { get; set; }
+    }
+
+    private sealed record NormalizedMapVehicleSummaryFilters(
+        bool IncludeCam,
+        bool IncludeDenm,
+        DateTime? FromTime,
+        DateTime? ToTime,
+        bool? IsSecureSigned,
+        bool? IsSecureEncrypted,
+        int[]? StationTypes,
+        string[]? VehicleRoles,
+        double? MinLatitude,
+        double? MaxLatitude,
+        double? MinLongitude,
+        double? MaxLongitude,
+        int? TileZ,
+        int? TileX,
+        int? TileY,
+        string Scope);
 }

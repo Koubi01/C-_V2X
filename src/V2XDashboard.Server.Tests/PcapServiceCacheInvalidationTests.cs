@@ -205,6 +205,7 @@ public sealed class PcapServiceCacheInvalidationTests
         public Task<PagedResult<MessageListItemDto>> GetMessageListPagedAsync(string messageType, int pageNumber = 1, int pageSize = 25) => throw new NotSupportedException();
         public Task<MessageCountsDto> GetMessageCountsAsync() => throw new NotSupportedException();
         public Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync() => Task.FromResult(new DistinctVehicleWindowStatsDto());
+        public Task<MapVehicleFilterSummaryDto> GetMapVehicleFilterSummaryAsync(MapVehicleSummaryQueryParams filters) => throw new NotSupportedException();
         public Task<List<CAM>> GetCAMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<DENM>> GetDENMMessagesAsync(int? limit = null) => throw new NotSupportedException();
         public Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null) => throw new NotSupportedException();

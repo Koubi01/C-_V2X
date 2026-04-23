@@ -109,6 +109,54 @@
             </MudStack>
         </MudPaper>
 
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" lg="4">
+                <MudPaper Class="metric-card" Elevation="0">
+                    <MudText Typo="Typo.overline">Distinct Vehicles (@vehicleSummaryScopeLabel)</MudText>
+                    <MudText Typo="Typo.h3">@filteredDistinctVehicleCount</MudText>
+                    <MudText Typo="Typo.body2">Distinct StationId values matching current map filters.</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" lg="8">
+                <MudPaper Class="panel-card" Elevation="0">
+                    <MudStack Spacing="2">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h6">Station Type Share</MudText>
+                            <MudCheckBox T="bool"
+                                         Value="@useCenterTileScope"
+                                         ValueChanged="OnUseCenterTileScopeChangedAsync"
+                                         Label="Use center tile"
+                                         Color="Color.Info"
+                                         Disabled="@isLoading" />
+                        </MudStack>
+                        @if (isVehicleSummaryLoading)
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(vehicleSummaryErrorMessage))
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Error">@vehicleSummaryErrorMessage</MudText>
+                        }
+                        @if (stationTypeShares.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2">No station-type distribution available for the current filters.</MudText>
+                        }
+                        else
+                        {
+                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                @foreach (var share in stationTypeShares)
+                                {
+                                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+                                        @GetStationTypeLabel(share.StationType): @share.DistinctVehicles (@share.Percentage.ToString("0.##")%)
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
         @if (isLoading)
         {
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
@@ -134,6 +182,14 @@
         bool? IsSecureEncrypted,
         int[] StationTypes,
         string[] VehicleRoles);
+    private sealed record MapViewportBoundsPayload(
+        double MinLatitude,
+        double MaxLatitude,
+        double MinLongitude,
+        double MaxLongitude,
+        int TileZ,
+        int TileX,
+        int TileY);
 
     private static readonly LayerOption[] MessageLayers =
     [
@@ -156,6 +212,9 @@
         new(15, "15 - RSU")
     ];
 
+    private static readonly IReadOnlyDictionary<int, string> StationTypeLabelsByValue =
+        StationTypeOptions.ToDictionary(option => option.Value, option => option.Label);
+
     private static readonly VehicleRoleOption[] VehicleRoleOptions =
     [
         new("0", "Unknown"),
@@ -174,6 +233,15 @@
     private string? toTimeText;
     private bool showSecureSigned = true;
     private bool showSecureEncrypted = true;
+    private bool isVehicleSummaryLoading;
+    private int filteredDistinctVehicleCount;
+    private string vehicleSummaryScopeLabel = "Global";
+    private string? vehicleSummaryErrorMessage;
+    private List<StationTypeShareDto> stationTypeShares = new();
+    private bool useCenterTileScope;
+    private DotNetObjectReference<Map>? mapDotNetReference;
+    private TileFilterPayload? lastAppliedFilters;
+    private CancellationTokenSource? vehicleSummaryRefreshCts;
     private HashSet<string> selectedLayers = new(StringComparer.OrdinalIgnoreCase)
     {
         TileLayerNames.Cam,
@@ -216,6 +284,8 @@
                 config.MaxZoom);
 
             isInitialized = true;
+            mapDotNetReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("v2xMap.registerViewportChangedCallback", mapDotNetReference);
             await ApplyFiltersAsync();
             StartDiagnosticsPolling();
         }
@@ -258,6 +328,8 @@
                 selectedVehicleRoleCodes.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray());
 
             await JS.InvokeVoidAsync("v2xMap.applyTileFilters", filters);
+            lastAppliedFilters = filters;
+            await RefreshVehicleSummaryAsync(filters, showLoadingIndicator: true);
         }
         catch (Exception ex)
         {
@@ -389,6 +461,153 @@
         return DateTime.TryParse(value, out var parsed) ? parsed : null;
     }
 
+    [JSInvokable]
+    public async Task OnMapViewportChanged()
+    {
+        if (!isInitialized || isLoading || lastAppliedFilters is null)
+        {
+            return;
+        }
+
+        await RefreshVehicleSummaryAsync(lastAppliedFilters, showLoadingIndicator: false);
+    }
+
+    private async Task OnUseCenterTileScopeChangedAsync(bool value)
+    {
+        useCenterTileScope = value;
+
+        if (lastAppliedFilters is null)
+        {
+            return;
+        }
+
+        await RefreshVehicleSummaryAsync(lastAppliedFilters, showLoadingIndicator: true);
+    }
+
+    private async Task RefreshVehicleSummaryAsync(TileFilterPayload filters, bool showLoadingIndicator)
+    {
+        var includesVehicleLayer = filters.VisibleLayers.Any(layer =>
+            string.Equals(layer, TileLayerNames.Cam, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(layer, TileLayerNames.Denm, StringComparison.OrdinalIgnoreCase));
+
+        if (!includesVehicleLayer)
+        {
+            filteredDistinctVehicleCount = 0;
+            vehicleSummaryScopeLabel = useCenterTileScope ? "Tile" : "Viewport";
+            vehicleSummaryErrorMessage = null;
+            stationTypeShares.Clear();
+            StateHasChanged();
+            return;
+        }
+
+        vehicleSummaryRefreshCts?.Cancel();
+        vehicleSummaryRefreshCts?.Dispose();
+        vehicleSummaryRefreshCts = new CancellationTokenSource();
+
+        if (showLoadingIndicator)
+        {
+            isVehicleSummaryLoading = true;
+            StateHasChanged();
+        }
+
+        try
+        {
+            var viewBounds = await JS.InvokeAsync<MapViewportBoundsPayload?>("v2xMap.getCurrentViewBounds");
+            var requestUri = BuildVehicleSummaryRequestUri(filters, viewBounds, useCenterTileScope);
+            var summary = await Http.GetFromJsonAsync<MapVehicleFilterSummaryDto>(requestUri, vehicleSummaryRefreshCts.Token);
+
+            filteredDistinctVehicleCount = summary?.DistinctVehicleCount ?? 0;
+            vehicleSummaryScopeLabel = string.IsNullOrWhiteSpace(summary?.Scope) ? "Global" : summary.Scope;
+            vehicleSummaryErrorMessage = null;
+            stationTypeShares = summary?.StationTypeShares
+                ?.OrderBy(share => share.StationType)
+                .ToList() ?? new List<StationTypeShareDto>();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            vehicleSummaryErrorMessage = $"Vehicle counter refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            if (showLoadingIndicator)
+            {
+                isVehicleSummaryLoading = false;
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    private static string BuildVehicleSummaryRequestUri(TileFilterPayload filters, MapViewportBoundsPayload? viewBounds, bool useTileScope)
+    {
+        var queryParams = new List<string>();
+
+        foreach (var layer in filters.VisibleLayers)
+        {
+            AddQueryParam(queryParams, "visibleLayers", layer);
+        }
+
+        AddQueryParam(queryParams, "fromTime", filters.FromTime);
+        AddQueryParam(queryParams, "toTime", filters.ToTime);
+        AddQueryParam(queryParams, "isSecureSigned", filters.IsSecureSigned?.ToString()?.ToLowerInvariant());
+        AddQueryParam(queryParams, "isSecureEncrypted", filters.IsSecureEncrypted?.ToString()?.ToLowerInvariant());
+
+        foreach (var stationType in filters.StationTypes)
+        {
+            AddQueryParam(queryParams, "stationTypes", stationType.ToString());
+        }
+
+        foreach (var vehicleRole in filters.VehicleRoles)
+        {
+            AddQueryParam(queryParams, "vehicleRoles", vehicleRole);
+        }
+
+        if (viewBounds is not null)
+        {
+            if (useTileScope)
+            {
+                AddQueryParam(queryParams, "tileZ", viewBounds.TileZ.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                AddQueryParam(queryParams, "tileX", viewBounds.TileX.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                AddQueryParam(queryParams, "tileY", viewBounds.TileY.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                AddQueryParam(queryParams, "minLatitude", viewBounds.MinLatitude.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                AddQueryParam(queryParams, "maxLatitude", viewBounds.MaxLatitude.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                AddQueryParam(queryParams, "minLongitude", viewBounds.MinLongitude.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                AddQueryParam(queryParams, "maxLongitude", viewBounds.MaxLongitude.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        if (queryParams.Count == 0)
+        {
+            return "api/map/vehicles/summary";
+        }
+
+        return $"api/map/vehicles/summary?{string.Join("&", queryParams)}";
+    }
+
+    private static void AddQueryParam(List<string> queryParams, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        queryParams.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+    }
+
+    private static string GetStationTypeLabel(int stationType)
+    {
+        return StationTypeLabelsByValue.TryGetValue(stationType, out var label)
+            ? label
+            : $"{stationType} - Other";
+    }
+
     private void StartDiagnosticsPolling()
     {
         diagnosticsPollingCts?.Cancel();
@@ -482,8 +701,16 @@
             diagnosticsPollingTask = null;
         }
 
+        vehicleSummaryRefreshCts?.Cancel();
+        vehicleSummaryRefreshCts?.Dispose();
+        vehicleSummaryRefreshCts = null;
+
+        mapDotNetReference?.Dispose();
+        mapDotNetReference = null;
+
         try
         {
+            await JS.InvokeVoidAsync("v2xMap.unregisterViewportChangedCallback");
             await JS.InvokeVoidAsync("v2xMap.disposeMap");
         }
         catch
