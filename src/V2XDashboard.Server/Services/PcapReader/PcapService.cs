@@ -331,6 +331,11 @@ public class PcapService : IPcapService
         return await RefreshDistinctVehicleWindowStatsCacheAsync();
     }
 
+    public async Task<MapVehicleFilterSummaryDto> GetMapVehicleFilterSummaryAsync(MapVehicleSummaryQueryParams filters)
+    {
+        return await _v2xMessageRepository.GetMapVehicleFilterSummaryAsync(filters);
+    }
+
     public async Task<List<V2XMessage>> GetV2XMessagesAsync(string? messageType = null, int? limit = null)
     {
         var allMessages = new List<V2XMessage>();

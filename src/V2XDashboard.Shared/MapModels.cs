@@ -67,3 +67,52 @@ public class MapConfigDto
     public double MinZoom { get; set; }
     public double MaxZoom { get; set; }
 }
+
+public sealed class MapVehicleSummaryQueryParams
+{
+    public string[]? VisibleLayers { get; set; }
+
+    public DateTime? FromTime { get; set; }
+
+    public DateTime? ToTime { get; set; }
+
+    public bool? IsSecureSigned { get; set; }
+
+    public bool? IsSecureEncrypted { get; set; }
+
+    public int[]? StationTypes { get; set; }
+
+    public string[]? VehicleRoles { get; set; }
+
+    public double? MinLatitude { get; set; }
+
+    public double? MaxLatitude { get; set; }
+
+    public double? MinLongitude { get; set; }
+
+    public double? MaxLongitude { get; set; }
+
+    public int? TileZ { get; set; }
+
+    public int? TileX { get; set; }
+
+    public int? TileY { get; set; }
+}
+
+public sealed class MapVehicleFilterSummaryDto
+{
+    public int DistinctVehicleCount { get; set; }
+
+    public string Scope { get; set; } = "Global";
+
+    public IReadOnlyList<StationTypeShareDto> StationTypeShares { get; set; } = Array.Empty<StationTypeShareDto>();
+}
+
+public sealed class StationTypeShareDto
+{
+    public int StationType { get; set; }
+
+    public int DistinctVehicles { get; set; }
+
+    public double Percentage { get; set; }
+}

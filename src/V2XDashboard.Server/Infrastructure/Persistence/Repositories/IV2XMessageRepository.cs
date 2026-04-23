@@ -14,6 +14,7 @@ public interface IV2XMessageRepository
     Task<PagedResult<MessageListItemDto>> GetMessageListPagedAsync(string messageType, int pageNumber = 1, int pageSize = 25);
     Task<MessageCountsDto> GetMessageCountsAsync();
     Task<DistinctVehicleWindowStatsDto> GetDistinctVehicleWindowStatsAsync();
+    Task<MapVehicleFilterSummaryDto> GetMapVehicleFilterSummaryAsync(MapVehicleSummaryQueryParams filters);
     Task<List<CAM>> GetCAMMessagesAsync(int? limit = null);
     Task<List<DENM>> GetDENMMessagesAsync(int? limit = null);
     Task<List<MAPEM>> GetMAPEMMessagesAsync(int? limit = null);

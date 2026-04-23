@@ -7,6 +7,18 @@ namespace V2XDashboard.Server.Api.Endpoints;
 
 public static class MapEndpoints
 {
+    private static readonly HashSet<string> VehicleSummarySupportedLayers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        TileLayerNames.Cam,
+        TileLayerNames.Denm,
+        TileLayerNames.Mapem,
+        TileLayerNames.Spatem,
+        TileLayerNames.Srem,
+        TileLayerNames.Ssem,
+        TileLayerNames.Correlations,
+        "TrafficIntensity"
+    };
+
     public static IEndpointRouteBuilder MapMapEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/map").WithTags("Map");
@@ -65,6 +77,34 @@ public static class MapEndpoints
                 return Results.Ok(result);
             });
 
+        group.MapGet(
+            "/vehicles/summary",
+            async (
+                [AsParameters] MapVehicleSummaryQueryParams filters,
+                IV2XMessageQueryService messageQueryService) =>
+            {
+                var dateRangeValidation = ApiRequestValidation.ValidateDateRange(filters.FromTime, filters.ToTime);
+                if (dateRangeValidation is not null)
+                {
+                    return dateRangeValidation;
+                }
+
+                var layersValidation = ValidateVehicleSummaryLayers(filters.VisibleLayers);
+                if (layersValidation is not null)
+                {
+                    return layersValidation;
+                }
+
+                var spatialValidation = ValidateVehicleSummarySpatialScope(filters);
+                if (spatialValidation is not null)
+                {
+                    return spatialValidation;
+                }
+
+                var summary = await messageQueryService.GetMapVehicleFilterSummaryAsync(filters);
+                return Results.Ok(summary);
+            });
+
         group.MapGet("/config", (IConfiguration configuration) =>
         {
             var mapSection = configuration.GetSection("MapConfig");
@@ -82,5 +122,174 @@ public static class MapEndpoints
         });
 
         return app;
+    }
+
+    private static IResult? ValidateVehicleSummaryLayers(string[]? visibleLayers)
+    {
+        if (visibleLayers is null)
+        {
+            return null;
+        }
+
+        var invalidLayers = visibleLayers
+            .Where(layer => !string.IsNullOrWhiteSpace(layer))
+            .Select(layer => layer.Trim())
+            .Where(layer => !VehicleSummarySupportedLayers.Contains(layer))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (invalidLayers.Length == 0)
+        {
+            return null;
+        }
+
+        return Results.ValidationProblem(
+            new Dictionary<string, string[]>
+            {
+                [nameof(MapVehicleSummaryQueryParams.VisibleLayers)] =
+                [
+                    $"Unsupported visibleLayers value(s): {string.Join(", ", invalidLayers)}."
+                ]
+            },
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    private static IResult? ValidateVehicleSummarySpatialScope(MapVehicleSummaryQueryParams filters)
+    {
+        var hasAnyBounds = filters.MinLatitude.HasValue
+            || filters.MaxLatitude.HasValue
+            || filters.MinLongitude.HasValue
+            || filters.MaxLongitude.HasValue;
+
+        var hasAllBounds = filters.MinLatitude.HasValue
+            && filters.MaxLatitude.HasValue
+            && filters.MinLongitude.HasValue
+            && filters.MaxLongitude.HasValue;
+
+        if (hasAnyBounds && !hasAllBounds)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.MinLatitude)] =
+                    ["minLatitude, maxLatitude, minLongitude, and maxLongitude must all be provided together."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var hasAnyTile = filters.TileZ.HasValue
+            || filters.TileX.HasValue
+            || filters.TileY.HasValue;
+
+        var hasAllTile = filters.TileZ.HasValue
+            && filters.TileX.HasValue
+            && filters.TileY.HasValue;
+
+        if (hasAnyTile && !hasAllTile)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.TileZ)] =
+                    ["tileZ, tileX, and tileY must all be provided together."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (hasAllBounds && hasAllTile)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.MinLatitude)] =
+                    ["Provide either viewport bounds or tile coordinates, not both."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (hasAllBounds)
+        {
+            if (filters.MinLatitude is < -85 or > 85 || filters.MaxLatitude is < -85 or > 85)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        [nameof(MapVehicleSummaryQueryParams.MinLatitude)] = ["Latitude must be between -85 and 85."]
+                    },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (filters.MinLongitude is < -180 or > 180 || filters.MaxLongitude is < -180 or > 180)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        [nameof(MapVehicleSummaryQueryParams.MinLongitude)] = ["Longitude must be between -180 and 180."]
+                    },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (filters.MinLatitude >= filters.MaxLatitude)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        [nameof(MapVehicleSummaryQueryParams.MinLatitude)] = ["minLatitude must be < maxLatitude."]
+                    },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (filters.MinLongitude >= filters.MaxLongitude)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        [nameof(MapVehicleSummaryQueryParams.MinLongitude)] = ["minLongitude must be < maxLongitude."]
+                    },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+
+        if (!hasAllTile)
+        {
+            return null;
+        }
+
+        var z = filters.TileZ!.Value;
+        var x = filters.TileX!.Value;
+        var y = filters.TileY!.Value;
+
+        if (z < 0 || z > 22)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.TileZ)] = ["tileZ must be between 0 and 22."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var maxIndex = (1 << z) - 1;
+        if (x < 0 || x > maxIndex)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.TileX)] = [$"tileX must be between 0 and {maxIndex} for zoom level {z}."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (y < 0 || y > maxIndex)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(MapVehicleSummaryQueryParams.TileY)] = [$"tileY must be between 0 and {maxIndex} for zoom level {z}."]
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return null;
     }
 }

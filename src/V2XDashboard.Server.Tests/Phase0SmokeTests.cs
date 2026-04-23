@@ -54,6 +54,19 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
     }
 
     [Fact]
+    public async Task MapVehicleSummary_ReturnsOkWithPayload()
+    {
+        var response = await _client.GetAsync(
+            "/api/map/vehicles/summary?visibleLayers=CAM&minLatitude=49.7&maxLatitude=50.1&minLongitude=18.0&maxLongitude=18.6");
+        var payload = await response.Content.ReadFromJsonAsync<MapVehicleFilterSummaryDto>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.True(payload!.DistinctVehicleCount > 0);
+        Assert.NotEmpty(payload.StationTypeShares);
+    }
+
+    [Fact]
     public async Task QueryCorrelationsPaged_ReturnsOkWithPagedResult()
     {
         var response = await _client.GetAsync("/api/correlations/paged?pageNumber=1&pageSize=10");
@@ -275,6 +288,18 @@ public class Phase0SmokeTests : IClassFixture<Phase0SmokeTests.TestAppFactory>
                 Buckets = new List<DistinctVehicleWindowBucketDto>
                 {
                     new() { BucketStart = DateTime.UtcNow, DistinctVehicles = 1 }
+                }
+            });
+
+        public Task<MapVehicleFilterSummaryDto> GetMapVehicleFilterSummaryAsync(MapVehicleSummaryQueryParams filters)
+            => Task.FromResult(new MapVehicleFilterSummaryDto
+            {
+                DistinctVehicleCount = 2,
+                Scope = "Viewport",
+                StationTypeShares = new List<StationTypeShareDto>
+                {
+                    new() { StationType = 5, DistinctVehicles = 1, Percentage = 50 },
+                    new() { StationType = 6, DistinctVehicles = 1, Percentage = 50 }
                 }
             });
 

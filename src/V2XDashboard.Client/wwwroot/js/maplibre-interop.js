@@ -66,6 +66,8 @@ window.v2xMap = (() => {
     let popup = null;
     let currentFilters = createDefaultFilters();
     let interactionsBound = false;
+    let viewportChangedCallback = null;
+    let moveEndHandler = null;
     let trafficIntensityStyle = null;
     let trafficIntensityLoadPromise = null;
 
@@ -565,9 +567,75 @@ window.v2xMap = (() => {
         bindLayerInteractions();
     }
 
+    function detachViewportChangedListener() {
+        if (!map || !moveEndHandler) {
+            return;
+        }
+
+        map.off("moveend", moveEndHandler);
+        moveEndHandler = null;
+    }
+
+    function attachViewportChangedListener() {
+        if (!map || !viewportChangedCallback || moveEndHandler) {
+            return;
+        }
+
+        moveEndHandler = () => {
+            if (!viewportChangedCallback) {
+                return;
+            }
+
+            viewportChangedCallback.invokeMethodAsync("OnMapViewportChanged").catch(() => {
+            });
+        };
+
+        map.on("moveend", moveEndHandler);
+    }
+
+    function lngLatToTile(lng, lat, zoom) {
+        const normalizedZoom = Math.max(0, zoom | 0);
+        const n = Math.pow(2, normalizedZoom);
+        const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
+        const latRad = clampedLat * (Math.PI / 180);
+
+        const tileX = Math.floor(((lng + 180) / 360) * n);
+        const tileY = Math.floor(
+            (1 - (Math.log(Math.tan(latRad) + (1 / Math.cos(latRad))) / Math.PI)) / 2 * n
+        );
+
+        return {
+            z: normalizedZoom,
+            x: Math.max(0, Math.min(n - 1, tileX)),
+            y: Math.max(0, Math.min(n - 1, tileY))
+        };
+    }
+
+    function getCurrentViewBounds() {
+        if (!map) {
+            return null;
+        }
+
+        const bounds = map.getBounds();
+        const center = map.getCenter();
+        const tileZoom = Math.max(0, Math.floor(map.getZoom()));
+        const centerTile = lngLatToTile(center.lng, center.lat, tileZoom);
+
+        return {
+            minLatitude: bounds.getSouth(),
+            maxLatitude: bounds.getNorth(),
+            minLongitude: bounds.getWest(),
+            maxLongitude: bounds.getEast(),
+            tileZ: centerTile.z,
+            tileX: centerTile.x,
+            tileY: centerTile.y
+        };
+    }
+
     return {
         initializeMap: function (containerId, styleUrl, centerLongitude, centerLatitude, zoom, minZoom, maxZoom) {
             if (map) {
+                detachViewportChangedListener();
                 map.remove();
             }
 
@@ -588,6 +656,7 @@ window.v2xMap = (() => {
 
             map.on("load", () => {
                 rebuildTileLayers();
+                attachViewportChangedListener();
             });
         },
 
@@ -609,16 +678,32 @@ window.v2xMap = (() => {
             rebuildTileLayers();
         },
 
+        registerViewportChangedCallback: function (dotNetRef) {
+            viewportChangedCallback = dotNetRef || null;
+            attachViewportChangedListener();
+        },
+
+        unregisterViewportChangedCallback: function () {
+            viewportChangedCallback = null;
+            detachViewportChangedListener();
+        },
+
+        getCurrentViewBounds: function () {
+            return getCurrentViewBounds();
+        },
+
         disposeMap: function () {
             if (!map) {
                 return;
             }
 
+            detachViewportChangedListener();
             closePopup();
             map.remove();
             map = null;
             currentFilters = createDefaultFilters();
             interactionsBound = false;
+            viewportChangedCallback = null;
         }
     };
 })();
